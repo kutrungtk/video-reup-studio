@@ -55,10 +55,13 @@ Danh sách thư viện:
 > ⚠️ Yêu cầu: NVIDIA GPU + CUDA 11.8+
 
 ```
+pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
 pip install omnivoice
 ```
 
 OmniVoice cho phép clone giọng nói từ 3 giây audio mẫu. Nếu không có GPU, app tự fallback sang Edge-TTS (free, không cần GPU).
+
+👉 **Hướng dẫn chi tiết:** [docs/OMNIVOICE.md](docs/OMNIVOICE.md)
 
 ### Bước 4: Tải FFmpeg
 
@@ -134,6 +137,45 @@ Không cần cấu hình gì — app tự detect khi khởi động.
 
 ### 📝 Lấy tiêu đề video
 Copy file `scripts/extract_titles.py` vào folder chứa video đã edit, double-click chạy → ra file `titles.txt` (tự bỏ ngày tháng, giữ tiêu đề + hashtag).
+
+### ⚙️ Cấu hình Settings
+
+Vào **Settings** (biểu tượng ⚙️ trên sidebar) để cấu hình:
+
+**Tab Voice / TTS:**
+| Mục | Giải thích |
+|-----|-----------|
+| Default Engine | OmniVoice (clone giọng, cần GPU) hoặc Edge-TTS (free) |
+| OmniVoice URL | URL server OmniVoice (mặc định localhost:8100) |
+| Default Voice | Giọng Edge-TTS mặc định (VD: vi-VN-NamMinhNeural) |
+| Voice Speed | Tốc độ đọc: +10% nhanh hơn, -5% chậm hơn |
+
+**Tab Pipeline:**
+| Mục | Giải thích |
+|-----|-----------|
+| Platform | Nền tảng xuất video (TikTok, YouTube, FB, IG) |
+| Anti-Reup Preset | Mức anti-reup mặc định (Light/Medium/Heavy) |
+
+**Tab Paths:**
+| Mục | Giải thích |
+|-----|-----------|
+| Download folder | Folder mặc định lưu video tải về |
+| Output folder | Folder mặc định lưu video đã edit |
+| FFmpeg path | Đường dẫn ffmpeg.exe (tự detect nếu để trống) |
+
+**Tab LLM / AI:**
+| Mục | Giải thích |
+|-----|-----------|
+| LLM Provider | API cho AI rewrite script (9router, OpenAI, Gemini) |
+| API Key | Key của provider đã chọn |
+| Model | Model AI (VD: gpt-4o, gemini-pro) |
+
+**Tab Advanced:**
+| Mục | Giải thích |
+|-----|-----------|
+| Whisper Model | Model transcribe (large-v3 tốt nhất, medium nhanh hơn) |
+| Device | cuda (GPU) hoặc cpu |
+| Max threads | Số luồng xử lý song song |
 
 ## 📦 Yêu cầu hệ thống
 
