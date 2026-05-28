@@ -232,8 +232,6 @@ class DownloadWorker(QThread):
                 import sys
                 if sys.platform == 'win32':
                     opts['windowsfilenames'] = True
-                    # Don't restrict filenames — keep readable titles
-                    # Fix: use encoding-safe outtmpl with sanitized title
                     opts['encoding'] = 'utf-8'
 
                 with yt_dlp.YoutubeDL(opts) as ydl:
