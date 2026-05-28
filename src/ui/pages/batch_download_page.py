@@ -33,10 +33,11 @@ class ScanWorker(QThread):
     finished = Signal(int)  # total count
     error = Signal(str)
 
-    def __init__(self, url: str, limit: int = 50):
+    def __init__(self, url: str, limit: int = 50, cookie_opts: dict = None):
         super().__init__()
         self.url = url
         self.limit = limit
+        self.cookie_opts = cookie_opts or {}
 
     def run(self):
         try:
@@ -56,6 +57,8 @@ class ScanWorker(QThread):
                 'ignoreerrors': True,
                 'playlistend': self.limit,  # Let yt-dlp handle the limit natively
             }
+            # Add cookie options
+            ydl_opts.update(self.cookie_opts)
 
             count = 0
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -101,13 +104,14 @@ class DownloadWorker(QThread):
     log = Signal(str)
     all_done = Signal(int, int)  # (success, failed)
 
-    def __init__(self, tasks: list, output_dir: str, resolution: str, mode: str, max_workers: int):
+    def __init__(self, tasks: list, output_dir: str, resolution: str, mode: str, max_workers: int, cookie_opts: dict = None):
         super().__init__()
         self.tasks = tasks  # [{index, url, title}, ...]
         self.output_dir = output_dir
         self.resolution = resolution
         self.mode = mode
         self.max_workers = max_workers
+        self.cookie_opts = cookie_opts or {}
         self._cancelled = False
 
     def run(self):
@@ -141,6 +145,8 @@ class DownloadWorker(QThread):
                     'no_warnings': True,
                     'ignoreerrors': True,
                 }
+                # Add cookie options
+                opts.update(self.cookie_opts)
 
                 # Find ffmpeg first — determines format strategy
                 import shutil
@@ -310,6 +316,30 @@ class BatchDownloadPage(QWidget):
 
         settings.addStretch()
 
+        # Cookie option
+        settings.addWidget(QLabel("🍪"))
+        self._cmb_cookie = QComboBox()
+        self._cmb_cookie.addItem("Không cookie", "none")
+        self._cmb_cookie.addItem("Firefox", "firefox")
+        self._cmb_cookie.addItem("Chrome", "chrome")
+        self._cmb_cookie.addItem("Edge", "edge")
+        self._cmb_cookie.addItem("File cookie.txt", "file")
+        self._cmb_cookie.setToolTip("Cookie cho TikTok/Facebook/Instagram (YouTube không cần)")
+        self._cmb_cookie.currentIndexChanged.connect(self._on_cookie_changed)
+        settings.addWidget(self._cmb_cookie)
+
+        self._txt_cookie_file = QLineEdit()
+        self._txt_cookie_file.setPlaceholderText("cookies.txt")
+        self._txt_cookie_file.setFixedWidth(120)
+        self._txt_cookie_file.setVisible(False)
+        settings.addWidget(self._txt_cookie_file)
+
+        self._btn_cookie_browse = QPushButton("📂")
+        self._btn_cookie_browse.setFixedWidth(30)
+        self._btn_cookie_browse.setVisible(False)
+        self._btn_cookie_browse.clicked.connect(self._browse_cookie)
+        settings.addWidget(self._btn_cookie_browse)
+
         # Output dir
         settings.addWidget(QLabel("Save:"))
         self._txt_output = QLineEdit()
@@ -400,7 +430,7 @@ class BatchDownloadPage(QWidget):
         self._txt_log.clear()
         self._txt_log.append(f"🔍 Scanning: {url}")
 
-        self._scan_worker = ScanWorker(url, self._spn_limit.value())
+        self._scan_worker = ScanWorker(url, self._spn_limit.value(), self._get_cookie_opts())
         self._scan_worker.video_found.connect(self._on_video_found)
         self._scan_worker.finished.connect(self._on_scan_done)
         self._scan_worker.error.connect(self._on_scan_error)
@@ -449,7 +479,7 @@ class BatchDownloadPage(QWidget):
         if hasattr(self, '_pending_urls') and self._pending_urls:
             next_url = self._pending_urls.pop(0)
             self._txt_log.append(f"  🔍 Scanning: {next_url[:60]}...")
-            self._scan_worker = ScanWorker(next_url, self._spn_limit.value())
+            self._scan_worker = ScanWorker(next_url, self._spn_limit.value(), self._get_cookie_opts())
             self._scan_worker.video_found.connect(self._on_video_found)
             self._scan_worker.finished.connect(self._on_txt_batch_done)
             self._scan_worker.error.connect(lambda m: self._txt_log.append(f"  ⚠ {m}"))
@@ -491,7 +521,7 @@ class BatchDownloadPage(QWidget):
         self._progress.setValue(0)
         self._txt_log.append(f"🚀 Downloading {len(tasks)} videos ({workers} workers)...")
 
-        self._dl_worker = DownloadWorker(tasks, output_dir, resolution, mode, workers)
+        self._dl_worker = DownloadWorker(tasks, output_dir, resolution, mode, workers, self._get_cookie_opts())
         self._dl_worker.progress.connect(self._on_dl_progress)
         self._dl_worker.log.connect(lambda m: self._txt_log.append(m))
         self._dl_worker.all_done.connect(self._on_dl_done)
@@ -527,6 +557,30 @@ class BatchDownloadPage(QWidget):
             if item:
                 item.setText("☐" if item.text() == "☑" else "☑")
 
+    def _on_cookie_changed(self, idx):
+        is_file = self._cmb_cookie.currentData() == "file"
+        self._txt_cookie_file.setVisible(is_file)
+        self._btn_cookie_browse.setVisible(is_file)
+
+    def _browse_cookie(self):
+        p, _ = QFileDialog.getOpenFileName(self, "Select cookie file", filter="Text (*.txt);;All (*)")
+        if p:
+            self._txt_cookie_file.setText(p)
+
+    def _get_cookie_opts(self):
+        """Return yt-dlp cookie options dict."""
+        mode = self._cmb_cookie.currentData()
+        if mode == "none":
+            return {}
+        elif mode == "file":
+            path = self._txt_cookie_file.text().strip()
+            if path and os.path.isfile(path):
+                return {'cookiefile': path}
+            return {}
+        else:
+            # browser name: firefox, chrome, edge
+            return {'cookiesfrombrowser': (mode,)}
+
     def _toggle_select_all(self):
         all_checked = all(
             self._table.item(r, 0) and self._table.item(r, 0).text() == "☑"
@@ -553,7 +607,7 @@ class BatchDownloadPage(QWidget):
                     self._pending_urls = urls[1:]  # queue remaining
                     self._btn_scan.setEnabled(False)
                     self._btn_scan.setText("⏳ Scanning...")
-                    self._scan_worker = ScanWorker(urls[0], self._spn_limit.value())
+                    self._scan_worker = ScanWorker(urls[0], self._spn_limit.value(), self._get_cookie_opts())
                     self._scan_worker.video_found.connect(self._on_video_found)
                     self._scan_worker.finished.connect(self._on_txt_batch_done)
                     self._scan_worker.error.connect(self._on_scan_error)
