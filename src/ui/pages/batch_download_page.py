@@ -60,6 +60,10 @@ class ScanWorker(QThread):
             # Add cookie options
             ydl_opts.update(self.cookie_opts)
 
+            # TikTok/Douyin: use mobile API to bypass web challenge
+            if any(p in url.lower() for p in ['tiktok.com', 'douyin.com']):
+                ydl_opts['extractor_args'] = {'tiktok': ['api_hostname=api22-normal-c-alisg.tiktokv.com']}
+
             count = 0
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
@@ -150,7 +154,7 @@ class DownloadWorker(QThread):
                 is_tiktok = any(p in url.lower() for p in ['tiktok.com', 'douyin.com'])
                 
                 opts = {
-                    'outtmpl': os.path.join(self.output_dir, f'{today}_%(title)s_edited.%(ext)s'),
+                    'outtmpl': os.path.join(self.output_dir, f'{today}_%(title)s.%(ext)s'),
                     'retries': 3,
                     'fragment_retries': 3,
                     'extractor_retries': 3,
@@ -202,9 +206,10 @@ class DownloadWorker(QThread):
 
                 if self.mode == "Video MP4":
                     if is_tiktok:
-                        # TikTok: use 'download' format (direct CDN link with video+audio)
-                        # Other formats may be video-only despite reporting acodec=aac
-                        opts['format'] = 'download/best[height<=1080][ext=mp4]/best'
+                        # TikTok: only 'download' format has real audio
+                        # Other formats (bytevc1_*, h264_*) are video-only despite reporting acodec=aac
+                        opts['format'] = 'download/best'
+                        opts['extractor_args'] = {'tiktok': ['api_hostname=api22-normal-c-alisg.tiktokv.com']}
                     elif has_ffmpeg:
                         # Ưu tiên: video+audio riêng (chất lượng cao nhất) → merge
                         opts['format'] = (
@@ -219,7 +224,8 @@ class DownloadWorker(QThread):
 
                 elif self.mode == "Video + Thumbnail":
                     if is_tiktok:
-                        opts['format'] = 'download/best[height<=1080][ext=mp4]/best'
+                        opts['format'] = 'download/best'
+                        opts['extractor_args'] = {'tiktok': ['api_hostname=api22-normal-c-alisg.tiktokv.com']}
                     elif has_ffmpeg:
                         opts['format'] = (
                             f'bestvideo[height<={res}]+bestaudio/'
