@@ -54,7 +54,7 @@ class ScanWorker(QThread):
                 'extract_flat': 'in_playlist',
                 'quiet': True,
                 'no_warnings': True,
-                'ignoreerrors': False,  # Don't swallow errors — we need to know what failed
+                'ignoreerrors': True,
                 'playlistend': self.limit,
             }
             # Add cookie options
