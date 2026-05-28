@@ -23,3 +23,4 @@ src/capture_navtools.py
 src/intercept_navtools.py
 src/test_*.py
 setup_playwright.bat
+.brain/
