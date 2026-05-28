@@ -54,8 +54,8 @@ class ScanWorker(QThread):
                 'extract_flat': 'in_playlist',
                 'quiet': True,
                 'no_warnings': True,
-                'ignoreerrors': True,
-                'playlistend': self.limit,  # Let yt-dlp handle the limit natively
+                'ignoreerrors': False,  # Don't swallow errors — we need to know what failed
+                'playlistend': self.limit,
             }
             # Add cookie options
             ydl_opts.update(self.cookie_opts)
@@ -95,7 +95,12 @@ class ScanWorker(QThread):
             self.finished.emit(count)
 
         except Exception as e:
-            self.error.emit(str(e))
+            import traceback
+            err_msg = str(e)
+            # Add more detail for debugging
+            if 'Cannot extract' in err_msg or 'Unexpected response' in err_msg:
+                err_msg += f" (cookies: {'yes' if self.cookie_opts else 'no'})"
+            self.error.emit(err_msg)
 
 
 class DownloadWorker(QThread):
