@@ -245,11 +245,24 @@ class DownloadWorker(QThread):
                 # TikTok/Douyin: luôn dùng best (file gộp sẵn, tránh mất tiếng)
                 has_ffmpeg = ffmpeg_location is not None
 
+                is_facebook = 'facebook.com' in url.lower() or 'fb.watch' in url.lower()
+
                 if self.mode == "Video MP4":
                     if is_tiktok:
                         # TikTok 2-pass: video HD (no watermark) + audio from 'download' format + merge
                         opts['format'] = 'bytevc1_1080p_1281826-0/bytevc1_720p_688444-0/h264_720p_929531-0/best'
                         opts['extractor_args'] = {'tiktok': ['api_hostname=api22-normal-c-alisg.tiktokv.com']}
+                    elif is_facebook and has_ffmpeg:
+                        # Facebook Reel/Watch: prefer dash HD + merge audio
+                        # Some FB formats lack 'height' field → fallback chain wider
+                        opts['format'] = (
+                            f'bestvideo[height<={res}][ext=mp4]+bestaudio[ext=m4a]/'
+                            f'bestvideo[height<={res}]+bestaudio/'
+                            f'bestvideo+bestaudio/'
+                            f'best[ext=mp4]/best'
+                        )
+                        # Sort by quality: highest height → highest bitrate → mp4
+                        opts['format_sort'] = ['res', 'tbr', 'ext:mp4:m4a']
                     elif has_ffmpeg:
                         # Ưu tiên: video+audio riêng (chất lượng cao nhất) → merge
                         opts['format'] = (
@@ -266,6 +279,14 @@ class DownloadWorker(QThread):
                     if is_tiktok:
                         opts['format'] = 'bytevc1_1080p_1281826-0/bytevc1_720p_688444-0/h264_720p_929531-0/best'
                         opts['extractor_args'] = {'tiktok': ['api_hostname=api22-normal-c-alisg.tiktokv.com']}
+                    elif is_facebook and has_ffmpeg:
+                        opts['format'] = (
+                            f'bestvideo[height<={res}][ext=mp4]+bestaudio[ext=m4a]/'
+                            f'bestvideo[height<={res}]+bestaudio/'
+                            f'bestvideo+bestaudio/'
+                            f'best[ext=mp4]/best'
+                        )
+                        opts['format_sort'] = ['res', 'tbr', 'ext:mp4:m4a']
                     elif has_ffmpeg:
                         opts['format'] = (
                             f'bestvideo[height<={res}]+bestaudio/'
