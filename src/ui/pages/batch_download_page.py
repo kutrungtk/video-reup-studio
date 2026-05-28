@@ -272,7 +272,7 @@ class DownloadWorker(QThread):
                     # TikTok 2-pass: video HD (no watermark) + audio from 'download' + merge
                     # MUST use quiet=True + ignoreerrors=True — TikTok challenge is unstable
                     # but yt-dlp still downloads successfully with these settings
-                    import subprocess
+                    import subprocess, time
                     tiktok_opts = {
                         'quiet': True,
                         'no_warnings': True,
@@ -288,15 +288,25 @@ class DownloadWorker(QThread):
                     audio_tmp = os.path.join(self.output_dir, f'_tmp_audio_{idx}.mp4')
                     final_file = os.path.join(self.output_dir, f'{today}_{title[:80]}.mp4')
 
-                    # Pass 1: video HD
-                    opts_v = {**tiktok_opts, 'outtmpl': video_tmp, 'format': 'bytevc1_1080p_1281826-0/bytevc1_720p_688444-0/h264_720p_929531-0/best'}
-                    with yt_dlp.YoutubeDL(opts_v) as ydl:
-                        ydl.download([url])
+                    # Pass 1: video HD (retry up to 3 times — TikTok challenge is unstable)
+                    for attempt in range(3):
+                        if os.path.isfile(video_tmp):
+                            break
+                        opts_v = {**tiktok_opts, 'outtmpl': video_tmp, 'format': 'bytevc1_1080p_1281826-0/bytevc1_720p_688444-0/h264_720p_929531-0/best'}
+                        with yt_dlp.YoutubeDL(opts_v) as ydl:
+                            ydl.download([url])
+                        if not os.path.isfile(video_tmp) and attempt < 2:
+                            time.sleep(3)
 
-                    # Pass 2: audio (from watermarked 'download' format)
-                    opts_a = {**tiktok_opts, 'outtmpl': audio_tmp, 'format': 'download'}
-                    with yt_dlp.YoutubeDL(opts_a) as ydl:
-                        ydl.download([url])
+                    # Pass 2: audio (retry up to 3 times)
+                    for attempt in range(3):
+                        if os.path.isfile(audio_tmp):
+                            break
+                        opts_a = {**tiktok_opts, 'outtmpl': audio_tmp, 'format': 'download'}
+                        with yt_dlp.YoutubeDL(opts_a) as ydl:
+                            ydl.download([url])
+                        if not os.path.isfile(audio_tmp) and attempt < 2:
+                            time.sleep(3)
 
                     # Merge with ffmpeg
                     if os.path.isfile(video_tmp) and os.path.isfile(audio_tmp):
