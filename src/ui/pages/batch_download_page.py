@@ -147,9 +147,12 @@ class DownloadWorker(QThread):
                 today = date.today().strftime('%Y-%m-%d')
                 opts = {
                     'outtmpl': os.path.join(self.output_dir, f'{today}_%(title)s_edited.%(ext)s'),
-                    'quiet': True,
-                    'no_warnings': True,
-                    'ignoreerrors': True,
+                    'quiet': False,
+                    'no_warnings': False,
+                    'ignoreerrors': False,
+                    'retries': 3,
+                    'fragment_retries': 3,
+                    'extractor_retries': 3,
                 }
                 # Add cookie options
                 opts.update(self.cookie_opts)
