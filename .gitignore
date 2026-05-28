@@ -13,7 +13,11 @@ ffmpeg_bin/
 .browser_profile/
 Savedownload/
 Generate/
+Generate
 Login/
+Login
+cookies*.txt
+*.cookies
 *.png
 src/capture_navtools.py
 src/intercept_navtools.py
