@@ -57,10 +57,18 @@ class ScanWorker(QThread):
                 'ignoreerrors': True,
                 'playlistend': self.limit,
             }
-            # Add cookie options (skip for TikTok/Douyin scan — extract_flat doesn't need cookies
-            # and Firefox cookie lock can cause failures. Download handles cookies separately.)
-            is_tiktok_scan = any(p in url.lower() for p in ['tiktok.com', 'douyin.com'])
-            if not is_tiktok_scan:
+            # Add cookie options
+            # TikTok scan: skip cookies (extract_flat doesn't need them, can cause lock issues)
+            # Douyin scan: NEEDS cookies (s_v_web_id required for API access)
+            # Others: use whatever user selected
+            is_tiktok_scan = 'tiktok.com' in url.lower()
+            is_douyin_scan = 'douyin.com' in url.lower()
+            if is_tiktok_scan:
+                pass  # TikTok scan works without cookies
+            elif is_douyin_scan:
+                # Douyin always needs Firefox cookies
+                ydl_opts['cookiesfrombrowser'] = ('firefox',)
+            else:
                 ydl_opts.update(self.cookie_opts)
 
             count = 0
@@ -150,7 +158,8 @@ class DownloadWorker(QThread):
                 today = date.today().strftime('%Y-%m-%d')
                 
                 # Detect platform for specific handling
-                is_tiktok = any(p in url.lower() for p in ['tiktok.com', 'douyin.com'])
+                is_tiktok = 'tiktok.com' in url.lower()
+                is_douyin = 'douyin.com' in url.lower()
                 
                 opts = {
                     'outtmpl': os.path.join(self.output_dir, f'{today}_%(title)s.%(ext)s'),
@@ -159,8 +168,8 @@ class DownloadWorker(QThread):
                     'extractor_retries': 3,
                 }
                 
-                if is_tiktok:
-                    # TikTok needs quiet=False to work (impersonation/challenge solving)
+                if is_tiktok or is_douyin:
+                    # TikTok/Douyin needs quiet=False to work (impersonation/challenge solving)
                     opts['quiet'] = False
                     opts['no_warnings'] = False
                     opts['ignoreerrors'] = False
@@ -360,6 +369,60 @@ class DownloadWorker(QThread):
                     else:
                         self.progress.emit(idx, "❌ Failed", "TikTok download failed after 3 retries")
                         self.log.emit(f"❌ [{idx+1}] {title[:50]}: TikTok download failed")
+                        return False
+                elif is_douyin:
+                    # Douyin: requires Firefox cookies (s_v_web_id from visiting douyin.com)
+                    # No channel/user extractor — only single video URLs supported
+                    # Needs Chinese IP (VPN/proxy) for access outside China
+                    import subprocess, time
+
+                    class _SilentLogger:
+                        def debug(self, msg): pass
+                        def info(self, msg): pass
+                        def warning(self, msg): pass
+                        def error(self, msg): pass
+
+                    douyin_opts = {
+                        'quiet': True,
+                        'no_warnings': True,
+                        'ignoreerrors': True,
+                        'windowsfilenames': True,
+                        'encoding': 'utf-8',
+                        'ffmpeg_location': ffmpeg_location,
+                        'format': 'bestvideo[height<=1080]+bestaudio/best',
+                        'merge_output_format': 'mp4',
+                        'outtmpl': os.path.join(self.output_dir, f'{today}_%(title).80s.%(ext)s'),
+                        'logger': _SilentLogger(),
+                        'cookiesfrombrowser': ('firefox',),
+                    }
+                    # Douyin delay (anti-block)
+                    if self.delay > 0:
+                        douyin_opts['sleep_interval'] = self.delay
+                        douyin_opts['sleep_requests'] = max(1, self.delay - 2)
+
+                    downloaded_file = None
+                    def douyin_hook(d):
+                        nonlocal downloaded_file
+                        if d['status'] == 'finished':
+                            downloaded_file = d.get('filename', d.get('info_dict', {}).get('_filename', ''))
+                    douyin_opts['progress_hooks'] = [douyin_hook]
+
+                    # Retry up to 3 times
+                    for attempt in range(3):
+                        with yt_dlp.YoutubeDL(douyin_opts) as ydl:
+                            ydl.download([url])
+                        if downloaded_file and os.path.isfile(downloaded_file):
+                            break
+                        if attempt < 2:
+                            time.sleep(self.delay if self.delay > 0 else 5)
+
+                    if downloaded_file and os.path.isfile(downloaded_file):
+                        self.progress.emit(idx, "✅ Done", os.path.basename(downloaded_file))
+                        self.log.emit(f"✅ [{idx+1}] {title[:50]}")
+                        return True
+                    else:
+                        self.progress.emit(idx, "❌ Failed", "Douyin: cần cookie + IP Trung Quốc")
+                        self.log.emit(f"❌ [{idx+1}] {title[:50]}: Douyin failed (cookie/IP issue)")
                         return False
                 else:
                     # Standard download (YouTube, FB, IG, etc.)
@@ -617,7 +680,7 @@ class BatchDownloadPage(QWidget):
                 self._spn_workers.setValue(2)
                 self._txt_log.append("💡 Douyin detected → Workers=2 (an toàn)")
             if self._cmb_cookie.currentData() == "none":
-                self._txt_log.append("⚠️ Douyin cần cookie! Chọn Firefox trong dropdown 🍪")
+                self._txt_log.append("⚠️ Douyin BẮT BUỘC cookie Firefox (vào douyin.com trước) + IP Trung Quốc")
         elif "tiktok.com" in url_lower:
             if self._spn_delay.value() < 2:
                 self._spn_delay.setValue(3)
