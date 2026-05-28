@@ -48,6 +48,27 @@ class ScanWorker(QThread):
             if "youtube.com/@" in url and "/videos" not in url and "/shorts" not in url:
                 url = url.rstrip("/") + "/videos"
 
+            # Douyin: yt-dlp extractor is broken; use direct API scan
+            if "douyin.com" in url.lower():
+                from downloaders.douyin import extract_aweme_id, load_firefox_cookies, fetch_video_detail
+                aweme_id = extract_aweme_id(url)
+                if not aweme_id:
+                    self.error.emit("Douyin: không lấy được aweme_id")
+                    return
+                cookies = load_firefox_cookies()
+                detail = fetch_video_detail(aweme_id, cookies)
+                if not detail:
+                    self.error.emit("Douyin: không lấy được aweme_detail (mở douyin.com trong Firefox rồi thử lại)")
+                    return
+                self.video_found.emit({
+                    'title': detail.get('desc') or aweme_id,
+                    'url': f"https://www.douyin.com/video/{aweme_id}",
+                    'duration': int((detail.get('duration') or 0) / 1000),
+                    'views': 0,
+                })
+                self.finished.emit(1)
+                return
+
             self.progress.emit(f"Scanning: {url}")
 
             ydl_opts = {
@@ -371,58 +392,25 @@ class DownloadWorker(QThread):
                         self.log.emit(f"❌ [{idx+1}] {title[:50]}: TikTok download failed")
                         return False
                 elif is_douyin:
-                    # Douyin: requires Firefox cookies (s_v_web_id from visiting douyin.com)
-                    # No channel/user extractor — only single video URLs supported
-                    # Needs Chinese IP (VPN/proxy) for access outside China
-                    import subprocess, time
-
-                    class _SilentLogger:
-                        def debug(self, msg): pass
-                        def info(self, msg): pass
-                        def warning(self, msg): pass
-                        def error(self, msg): pass
-
-                    douyin_opts = {
-                        'quiet': True,
-                        'no_warnings': True,
-                        'ignoreerrors': True,
-                        'windowsfilenames': True,
-                        'encoding': 'utf-8',
-                        'ffmpeg_location': ffmpeg_location,
-                        'format': 'bestvideo[height<=1080]+bestaudio/best',
-                        'merge_output_format': 'mp4',
-                        'outtmpl': os.path.join(self.output_dir, f'{today}_%(title).80s.%(ext)s'),
-                        'logger': _SilentLogger(),
-                        'cookiesfrombrowser': ('firefox',),
-                    }
-                    # Douyin delay (anti-block)
-                    if self.delay > 0:
-                        douyin_opts['sleep_interval'] = self.delay
-                        douyin_opts['sleep_requests'] = max(1, self.delay - 2)
-
-                    downloaded_file = None
-                    def douyin_hook(d):
-                        nonlocal downloaded_file
-                        if d['status'] == 'finished':
-                            downloaded_file = d.get('filename', d.get('info_dict', {}).get('_filename', ''))
-                    douyin_opts['progress_hooks'] = [douyin_hook]
-
-                    # Retry up to 3 times
-                    for attempt in range(3):
-                        with yt_dlp.YoutubeDL(douyin_opts) as ydl:
-                            ydl.download([url])
-                        if downloaded_file and os.path.isfile(downloaded_file):
-                            break
-                        if attempt < 2:
-                            time.sleep(self.delay if self.delay > 0 else 5)
-
-                    if downloaded_file and os.path.isfile(downloaded_file):
-                        self.progress.emit(idx, "✅ Done", os.path.basename(downloaded_file))
+                    # Douyin: direct API downloader (jiji262 flow: Firefox cookies + XBogus/ABogus)
+                    from downloaders.douyin import download_douyin
+                    result_dy = download_douyin(
+                        url=url,
+                        output_dir=self.output_dir,
+                        ffmpeg_location=ffmpeg_location,
+                        today=today,
+                        delay=self.delay if self.delay > 0 else 5,
+                        max_retries=3,
+                    )
+                    if result_dy.get('success'):
+                        file_path = result_dy.get('file') or ''
+                        self.progress.emit(idx, "✅ Done", os.path.basename(file_path))
                         self.log.emit(f"✅ [{idx+1}] {title[:50]}")
                         return True
                     else:
-                        self.progress.emit(idx, "❌ Failed", "Douyin: cần cookie + IP Trung Quốc")
-                        self.log.emit(f"❌ [{idx+1}] {title[:50]}: Douyin failed (cookie/IP issue)")
+                        msg = result_dy.get('message', 'Douyin download failed')
+                        self.progress.emit(idx, "❌ Failed", msg[:50])
+                        self.log.emit(f"❌ [{idx+1}] {title[:50]}: {msg}")
                         return False
                 else:
                     # Standard download (YouTube, FB, IG, etc.)
@@ -680,7 +668,7 @@ class BatchDownloadPage(QWidget):
                 self._spn_workers.setValue(2)
                 self._txt_log.append("💡 Douyin detected → Workers=2 (an toàn)")
             if self._cmb_cookie.currentData() == "none":
-                self._txt_log.append("⚠️ Douyin BẮT BUỘC cookie Firefox (vào douyin.com trước) + IP Trung Quốc")
+                self._txt_log.append("⚠️ Douyin cần cookie Firefox — hãy mở douyin.com trong Firefox trước")
         elif "tiktok.com" in url_lower:
             if self._spn_delay.value() < 2:
                 self._spn_delay.setValue(3)
