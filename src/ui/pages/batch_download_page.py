@@ -268,6 +268,14 @@ class DownloadWorker(QThread):
                     # TikTok: yt-dlp nightly (2026.05.25+) solves challenge reliably
                     # Use bestvideo+bestaudio merge for best quality without watermark
                     import subprocess
+
+                    # Suppress ERROR output to console (retry handles failures silently)
+                    class _SilentLogger:
+                        def debug(self, msg): pass
+                        def info(self, msg): pass
+                        def warning(self, msg): pass
+                        def error(self, msg): pass
+
                     tiktok_opts = {
                         'quiet': True,
                         'no_warnings': True,
@@ -278,6 +286,7 @@ class DownloadWorker(QThread):
                         'format': 'bestvideo[height<=1080]+bestaudio/best',
                         'merge_output_format': 'mp4',
                         'outtmpl': os.path.join(self.output_dir, f'{today}_%(title).80s.%(ext)s'),
+                        'logger': _SilentLogger(),
                     }
                     tiktok_opts.update(self.cookie_opts)
 
