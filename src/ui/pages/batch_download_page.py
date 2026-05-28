@@ -267,18 +267,31 @@ class DownloadWorker(QThread):
 
                 if is_tiktok and has_ffmpeg:
                     # TikTok 2-pass: video HD (no watermark) + audio from 'download' + merge
+                    # MUST use quiet=True + ignoreerrors=True — TikTok challenge is unstable
+                    # but yt-dlp still downloads successfully with these settings
                     import subprocess
+                    tiktok_opts = {
+                        'quiet': True,
+                        'no_warnings': True,
+                        'ignoreerrors': True,
+                        'windowsfilenames': True,
+                        'encoding': 'utf-8',
+                        'extractor_args': {'tiktok': ['api_hostname=api22-normal-c-alisg.tiktokv.com']},
+                        'ffmpeg_location': ffmpeg_location,
+                    }
+                    tiktok_opts.update(self.cookie_opts)
+
                     video_tmp = os.path.join(self.output_dir, f'_tmp_video_{idx}.mp4')
                     audio_tmp = os.path.join(self.output_dir, f'_tmp_audio_{idx}.mp4')
                     final_file = os.path.join(self.output_dir, f'{today}_{title[:80]}.mp4')
 
                     # Pass 1: video HD
-                    opts_v = {**opts, 'outtmpl': video_tmp, 'format': 'bytevc1_1080p_1281826-0/bytevc1_720p_688444-0/h264_720p_929531-0/best'}
+                    opts_v = {**tiktok_opts, 'outtmpl': video_tmp, 'format': 'bytevc1_1080p_1281826-0/bytevc1_720p_688444-0/h264_720p_929531-0/best'}
                     with yt_dlp.YoutubeDL(opts_v) as ydl:
                         ydl.download([url])
 
                     # Pass 2: audio (from watermarked 'download' format)
-                    opts_a = {**opts, 'outtmpl': audio_tmp, 'format': 'download'}
+                    opts_a = {**tiktok_opts, 'outtmpl': audio_tmp, 'format': 'download'}
                     with yt_dlp.YoutubeDL(opts_a) as ydl:
                         ydl.download([url])
 
