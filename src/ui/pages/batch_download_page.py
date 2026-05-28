@@ -57,11 +57,14 @@ class ScanWorker(QThread):
                 'ignoreerrors': True,
                 'playlistend': self.limit,
             }
-            # Add cookie options
-            ydl_opts.update(self.cookie_opts)
+            # Add cookie options (skip for TikTok/Douyin scan — extract_flat doesn't need cookies
+            # and Firefox cookie lock can cause failures. Download handles cookies separately.)
+            is_tiktok_scan = any(p in url.lower() for p in ['tiktok.com', 'douyin.com'])
+            if not is_tiktok_scan:
+                ydl_opts.update(self.cookie_opts)
 
             # TikTok/Douyin: use mobile API to bypass web challenge
-            if any(p in url.lower() for p in ['tiktok.com', 'douyin.com']):
+            if is_tiktok_scan:
                 ydl_opts['extractor_args'] = {'tiktok': ['api_hostname=api22-normal-c-alisg.tiktokv.com']}
 
             count = 0
@@ -579,8 +582,7 @@ class BatchDownloadPage(QWidget):
             if self._spn_delay.value() < 2:
                 self._spn_delay.setValue(3)
                 self._txt_log.append("💡 TikTok detected → Delay=3s")
-            if self._cmb_cookie.currentData() == "none":
-                self._txt_log.append("⚠️ TikTok cần cookie! Chọn Firefox trong dropdown 🍪")
+            # TikTok: app auto-handles cookies in download (2-pass), no user action needed
         elif "instagram.com" in url_lower:
             if self._cmb_cookie.currentData() == "none":
                 self._txt_log.append("⚠️ Instagram cần cookie! Chọn Firefox trong dropdown 🍪")
