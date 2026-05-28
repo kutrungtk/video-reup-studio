@@ -176,7 +176,7 @@ class QuickEditWorker(QThread):
         import shutil
 
         # Find ffmpeg binary
-        ffmpeg_bin = "ffmpeg"
+        ffmpeg_bin = None
         from config.constants import PROJECT_ROOT
         for ffmpeg_dir in [
             os.path.join(PROJECT_ROOT, "ffmpeg_bin"),
@@ -186,10 +186,17 @@ class QuickEditWorker(QThread):
             if os.path.isfile(candidate):
                 ffmpeg_bin = candidate
                 break
-        if ffmpeg_bin == "ffmpeg":
+        if not ffmpeg_bin:
             ff = shutil.which("ffmpeg")
             if ff:
                 ffmpeg_bin = ff
+        if not ffmpeg_bin:
+            self.error.emit("❌ Không tìm thấy ffmpeg.exe!\n\n"
+                "Cách fix:\n"
+                "1. Tải ffmpeg từ https://www.gyan.dev/ffmpeg/builds/\n"
+                "2. Copy ffmpeg.exe vào folder ffmpeg_bin/ trong project\n"
+                "3. Hoặc cài ffmpeg vào PATH hệ thống")
+            return
 
         success = 0
         failed = 0
