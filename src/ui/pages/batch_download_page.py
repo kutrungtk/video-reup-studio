@@ -147,9 +147,9 @@ class DownloadWorker(QThread):
                 today = date.today().strftime('%Y-%m-%d')
                 opts = {
                     'outtmpl': os.path.join(self.output_dir, f'{today}_%(title)s_edited.%(ext)s'),
-                    'quiet': False,
-                    'no_warnings': False,
-                    'ignoreerrors': False,
+                    'quiet': True,
+                    'no_warnings': True,
+                    'ignoreerrors': True,
                     'retries': 3,
                     'fragment_retries': 3,
                     'extractor_retries': 3,
@@ -186,10 +186,15 @@ class DownloadWorker(QThread):
                 # Format strategy:
                 # Có ffmpeg → ưu tiên chất lượng cao (bestvideo+bestaudio, merge)
                 # Không ffmpeg → chỉ lấy single-file (best có sẵn)
+                # TikTok/Douyin: luôn dùng best (file gộp sẵn, tránh mất tiếng)
                 has_ffmpeg = ffmpeg_location is not None
+                is_tiktok = any(p in url.lower() for p in ['tiktok.com', 'douyin.com'])
 
                 if self.mode == "Video MP4":
-                    if has_ffmpeg:
+                    if is_tiktok:
+                        # TikTok: file gộp sẵn video+audio, không cần merge
+                        opts['format'] = f'best[height<={res}][ext=mp4]/best[height<={res}]/best'
+                    elif has_ffmpeg:
                         # Ưu tiên: video+audio riêng (chất lượng cao nhất) → merge
                         opts['format'] = (
                             f'bestvideo[height<={res}]+bestaudio/'
@@ -202,7 +207,9 @@ class DownloadWorker(QThread):
                     opts['merge_output_format'] = 'mp4'
 
                 elif self.mode == "Video + Thumbnail":
-                    if has_ffmpeg:
+                    if is_tiktok:
+                        opts['format'] = f'best[height<={res}][ext=mp4]/best[height<={res}]/best'
+                    elif has_ffmpeg:
                         opts['format'] = (
                             f'bestvideo[height<={res}]+bestaudio/'
                             f'best[height<={res}][ext=mp4]/'
