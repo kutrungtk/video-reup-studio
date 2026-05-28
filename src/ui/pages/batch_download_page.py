@@ -63,10 +63,6 @@ class ScanWorker(QThread):
             if not is_tiktok_scan:
                 ydl_opts.update(self.cookie_opts)
 
-            # TikTok/Douyin: use mobile API to bypass web challenge
-            if is_tiktok_scan:
-                ydl_opts['extractor_args'] = {'tiktok': ['api_hostname=api22-normal-c-alisg.tiktokv.com']}
-
             count = 0
             with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
@@ -269,94 +265,91 @@ class DownloadWorker(QThread):
                     opts['encoding'] = 'utf-8'
 
                 if is_tiktok and has_ffmpeg:
-                    # TikTok 2-pass: video HD (no watermark) + audio from 'download' + merge
-                    # MUST use quiet=True + ignoreerrors=True — TikTok challenge is unstable
-                    # but yt-dlp still downloads successfully with these settings
-                    import subprocess, time
+                    # TikTok: yt-dlp nightly (2026.05.25+) solves challenge reliably
+                    # Use bestvideo+bestaudio merge for best quality without watermark
+                    import subprocess
                     tiktok_opts = {
                         'quiet': True,
                         'no_warnings': True,
                         'ignoreerrors': True,
                         'windowsfilenames': True,
                         'encoding': 'utf-8',
-                        'extractor_args': {'tiktok': ['api_hostname=api22-normal-c-alisg.tiktokv.com']},
                         'ffmpeg_location': ffmpeg_location,
+                        'format': 'bestvideo[height<=1080]+bestaudio/best',
+                        'merge_output_format': 'mp4',
+                        'outtmpl': os.path.join(self.output_dir, f'{today}_%(title).80s.%(ext)s'),
                     }
                     tiktok_opts.update(self.cookie_opts)
 
-                    video_tmp = os.path.join(self.output_dir, f'_tmp_video_{idx}.mp4')
-                    audio_tmp = os.path.join(self.output_dir, f'_tmp_audio_{idx}.mp4')
-                    final_file = os.path.join(self.output_dir, f'{today}_{title[:80]}.mp4')
+                    downloaded_file = None
+                    def tiktok_hook(d):
+                        nonlocal downloaded_file
+                        if d['status'] == 'finished':
+                            downloaded_file = d.get('filename', d.get('info_dict', {}).get('_filename', ''))
+                    tiktok_opts['progress_hooks'] = [tiktok_hook]
 
-                    # Pass 1: video HD (retry up to 3 times — TikTok challenge is unstable)
+                    # Retry up to 3 times (challenge can still be flaky)
+                    import time
                     for attempt in range(3):
-                        if os.path.isfile(video_tmp):
-                            break
-                        opts_v = {**tiktok_opts, 'outtmpl': video_tmp, 'format': 'bytevc1_1080p_1281826-0/bytevc1_720p_688444-0/h264_720p_929531-0/best'}
-                        with yt_dlp.YoutubeDL(opts_v) as ydl:
+                        with yt_dlp.YoutubeDL(tiktok_opts) as ydl:
                             ydl.download([url])
-                        if not os.path.isfile(video_tmp) and attempt < 2:
+                        if downloaded_file and os.path.isfile(downloaded_file):
+                            break
+                        if attempt < 2:
                             time.sleep(3)
 
-                    # Check if video already has audio (some TikTok CDN responses include it)
-                    video_has_audio = False
-                    if os.path.isfile(video_tmp):
-                        try:
-                            ffprobe_path = os.path.join(ffmpeg_location, 'ffprobe.exe' if sys.platform == 'win32' else 'ffprobe')
-                            r_probe = subprocess.run(
-                                [ffprobe_path, '-v', 'error', '-select_streams', 'a',
-                                 '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', video_tmp],
-                                capture_output=True, creationflags=0x08000000 if sys.platform == 'win32' else 0)
-                            video_has_audio = 'audio' in r_probe.stdout.decode()
-                        except Exception:
-                            pass
-
-                    # Pass 2: audio only if video doesn't have it
-                    if not video_has_audio:
-                        for attempt in range(3):
-                            if os.path.isfile(audio_tmp):
-                                break
-                            opts_a = {**tiktok_opts, 'outtmpl': audio_tmp, 'format': 'download'}
-                            with yt_dlp.YoutubeDL(opts_a) as ydl:
-                                ydl.download([url])
-                            if not os.path.isfile(audio_tmp) and attempt < 2:
-                                time.sleep(3)
-
-                    # Final output
-                    if os.path.isfile(video_tmp) and video_has_audio:
-                        # Video already has audio — just rename
-                        os.rename(video_tmp, final_file)
-                        self.progress.emit(idx, "✅ Done", os.path.basename(final_file))
-                        self.log.emit(f"✅ [{idx+1}] {title[:50]}")
-                        return True
-                    elif os.path.isfile(video_tmp) and os.path.isfile(audio_tmp):
-                        # Merge video + audio with ffmpeg
-                        cmd = [os.path.join(ffmpeg_location, 'ffmpeg.exe' if sys.platform == 'win32' else 'ffmpeg'),
-                               '-y', '-i', video_tmp, '-i', audio_tmp,
-                               '-c:v', 'copy', '-c:a', 'aac', '-map', '0:v:0', '-map', '1:a:0',
-                               '-shortest', final_file]
+                    if downloaded_file and os.path.isfile(downloaded_file):
+                        # Verify audio exists
+                        ffprobe_path = os.path.join(ffmpeg_location, 'ffprobe.exe' if sys.platform == 'win32' else 'ffprobe')
                         creationflags = 0x08000000 if sys.platform == 'win32' else 0
-                        r = subprocess.run(cmd, capture_output=True, creationflags=creationflags)
-                        # Cleanup temp
-                        if os.path.isfile(video_tmp): os.remove(video_tmp)
-                        if os.path.isfile(audio_tmp): os.remove(audio_tmp)
+                        r_probe = subprocess.run(
+                            [ffprobe_path, '-v', 'error', '-select_streams', 'a',
+                             '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', downloaded_file],
+                            capture_output=True, creationflags=creationflags)
+                        has_audio = 'audio' in r_probe.stdout.decode()
 
-                        if r.returncode == 0 and os.path.isfile(final_file):
-                            self.progress.emit(idx, "✅ Done", os.path.basename(final_file))
+                        if has_audio:
+                            self.progress.emit(idx, "✅ Done", os.path.basename(downloaded_file))
                             self.log.emit(f"✅ [{idx+1}] {title[:50]}")
                             return True
                         else:
-                            self.progress.emit(idx, "❌ Failed", "FFmpeg merge failed")
-                            self.log.emit(f"❌ [{idx+1}] {title[:50]}: FFmpeg merge error")
-                            return False
-                    elif os.path.isfile(video_tmp):
-                        # Audio failed — use video only
-                        os.rename(video_tmp, final_file)
-                        self.progress.emit(idx, "⚠️ Done (no audio)", os.path.basename(final_file))
-                        self.log.emit(f"⚠️ [{idx+1}] {title[:50]}: Video OK but no audio")
-                        return True
+                            # No audio — try merge from 'download' format
+                            audio_tmp = os.path.join(self.output_dir, f'_tmp_audio_{idx}.mp4')
+                            opts_a = {**tiktok_opts, 'outtmpl': audio_tmp, 'format': 'download',
+                                       'progress_hooks': []}
+                            for attempt in range(3):
+                                with yt_dlp.YoutubeDL(opts_a) as ydl:
+                                    ydl.download([url])
+                                if os.path.isfile(audio_tmp):
+                                    break
+                                if attempt < 2:
+                                    time.sleep(3)
+
+                            if os.path.isfile(audio_tmp):
+                                final_file = downloaded_file.replace('.mp4', '_merged.mp4')
+                                cmd = [os.path.join(ffmpeg_location, 'ffmpeg.exe' if sys.platform == 'win32' else 'ffmpeg'),
+                                       '-y', '-i', downloaded_file, '-i', audio_tmp,
+                                       '-c:v', 'copy', '-c:a', 'aac', '-map', '0:v:0', '-map', '1:a:0',
+                                       '-shortest', final_file]
+                                r = subprocess.run(cmd, capture_output=True, creationflags=creationflags)
+                                os.remove(audio_tmp)
+                                if r.returncode == 0 and os.path.isfile(final_file):
+                                    os.remove(downloaded_file)
+                                    self.progress.emit(idx, "✅ Done", os.path.basename(final_file))
+                                    self.log.emit(f"✅ [{idx+1}] {title[:50]}")
+                                    return True
+                                else:
+                                    # Merge failed — keep video without audio
+                                    self.progress.emit(idx, "⚠️ No audio", os.path.basename(downloaded_file))
+                                    self.log.emit(f"⚠️ [{idx+1}] {title[:50]}: Video OK, no audio")
+                                    return True
+                            else:
+                                # Audio download failed — keep video without audio
+                                self.progress.emit(idx, "⚠️ No audio", os.path.basename(downloaded_file))
+                                self.log.emit(f"⚠️ [{idx+1}] {title[:50]}: Video OK, no audio")
+                                return True
                     else:
-                        self.progress.emit(idx, "❌ Failed", "Download failed")
+                        self.progress.emit(idx, "❌ Failed", "TikTok download failed after 3 retries")
                         self.log.emit(f"❌ [{idx+1}] {title[:50]}: TikTok download failed")
                         return False
                 else:
