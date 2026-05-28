@@ -557,6 +557,13 @@ class BatchDownloadPage(QWidget):
 
         action_row.addStretch()
 
+        self._btn_retry = QPushButton("🔄 Retry Failed")
+        self._btn_retry.setObjectName("SecondaryButton")
+        self._btn_retry.setMinimumHeight(40)
+        self._btn_retry.setVisible(False)
+        self._btn_retry.clicked.connect(self._retry_failed)
+        action_row.addWidget(self._btn_retry)
+
         self._btn_download = QPushButton("🚀 DOWNLOAD SELECTED")
         self._btn_download.setObjectName("PrimaryButton")
         self._btn_download.setMinimumHeight(40)
@@ -734,6 +741,31 @@ class BatchDownloadPage(QWidget):
         self._progress.setValue(100)
         self._txt_log.append(f"\n✅ Done! Success: {success}, Failed: {failed}")
         self._txt_log.append(f"📂 Saved to: {self._txt_output.text()}")
+        # Show retry button if any failed
+        if failed > 0:
+            self._btn_retry.setVisible(True)
+
+    def _retry_failed(self):
+        """Retry only videos with ❌ Failed status."""
+        failed_indices = []
+        for row in range(self._table.rowCount()):
+            status_item = self._table.item(row, 4)
+            if status_item and "❌" in status_item.text():
+                failed_indices.append(row)
+                # Reset status
+                status_item.setText("⏳ Retry...")
+                # Check the checkbox
+                cb = self._table.item(row, 0)
+                if cb:
+                    cb.setText("☑")
+
+        if not failed_indices:
+            self._txt_log.append("ℹ️ No failed videos to retry")
+            return
+
+        self._txt_log.append(f"\n🔄 Retrying {len(failed_indices)} failed videos...")
+        self._btn_retry.setVisible(False)
+        self._download()
 
     def _cancel(self):
         if self._dl_worker:
