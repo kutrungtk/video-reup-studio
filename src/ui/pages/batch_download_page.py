@@ -33,11 +33,12 @@ class ScanWorker(QThread):
     finished = Signal(int)  # total count
     error = Signal(str)
 
-    def __init__(self, url: str, limit: int = 50, cookie_opts: dict = None):
+    def __init__(self, url: str, limit: int = 50, cookie_opts: dict = None, douyin_scan_mode: str = "author"):
         super().__init__()
         self.url = url
         self.limit = limit
         self.cookie_opts = cookie_opts or {}
+        self.douyin_scan_mode = douyin_scan_mode
 
     def run(self):
         try:
@@ -49,10 +50,29 @@ class ScanWorker(QThread):
                 url = url.rstrip("/") + "/videos"
 
             # Douyin: yt-dlp extractor is broken; use direct API scan.
-            # A pasted video/modal link scans that video's author posts up to limit.
             if "douyin.com" in url.lower():
-                from downloaders.douyin import scan_author_from_video
-                videos = scan_author_from_video(url, limit=self.limit)
+                from downloaders.douyin import (
+                    scan_author_from_video, extract_aweme_id,
+                    load_firefox_cookies, fetch_video_detail,
+                )
+                mode = self.douyin_scan_mode
+                if mode == "video":
+                    aweme_id = extract_aweme_id(url)
+                    if not aweme_id:
+                        self.error.emit("Douyin: không lấy được aweme_id")
+                        return
+                    detail = fetch_video_detail(aweme_id, load_firefox_cookies())
+                    if not detail:
+                        self.error.emit("Douyin: không lấy được aweme_detail")
+                        return
+                    videos = [{
+                        'title': detail.get('desc') or aweme_id,
+                        'url': f"https://www.douyin.com/video/{aweme_id}",
+                        'duration': int((detail.get('duration') or 0) / 1000),
+                        'views': (detail.get('statistics') or {}).get('play_count', 0),
+                    }]
+                else:
+                    videos = scan_author_from_video(url, limit=self.limit)
                 if not videos:
                     self.error.emit("Douyin: không quét được video/tác giả")
                     return
@@ -512,6 +532,13 @@ class BatchDownloadPage(QWidget):
         self._cmb_mode.addItems(["Video MP4", "Video + Thumbnail", "Audio MP3", "Thumbnail Only"])
         settings.addWidget(self._cmb_mode)
 
+        settings.addWidget(QLabel("Douyin:"))
+        self._cmb_douyin_mode = QComboBox()
+        self._cmb_douyin_mode.addItem("Tác giả/kênh", "author")
+        self._cmb_douyin_mode.addItem("Video hiện tại", "video")
+        self._cmb_douyin_mode.setToolTip("Douyin: quét cả tác giả từ 1 video, hoặc chỉ tải video hiện tại")
+        settings.addWidget(self._cmb_douyin_mode)
+
         settings.addWidget(QLabel("Workers:"))
         self._spn_workers = QSpinBox()
         self._spn_workers.setRange(1, 20)
@@ -659,6 +686,8 @@ class BatchDownloadPage(QWidget):
             if self._spn_workers.value() > 3:
                 self._spn_workers.setValue(2)
                 self._txt_log.append("💡 Douyin detected → Workers=2 (an toàn)")
+            mode_label = self._cmb_douyin_mode.currentText()
+            self._txt_log.append(f"💡 Douyin mode → {mode_label}")
             if self._cmb_cookie.currentData() == "none":
                 self._txt_log.append("⚠️ Douyin cần cookie Firefox — hãy mở douyin.com trong Firefox trước")
         elif "tiktok.com" in url_lower:
@@ -679,7 +708,7 @@ class BatchDownloadPage(QWidget):
         self._btn_scan.setText("⏳ Scanning...")
         self._txt_log.append(f"🔍 Scanning: {url}")
 
-        self._scan_worker = ScanWorker(url, self._spn_limit.value(), self._get_cookie_opts())
+        self._scan_worker = ScanWorker(url, self._spn_limit.value(), self._get_cookie_opts(), self._cmb_douyin_mode.currentData())
         self._scan_worker.video_found.connect(self._on_video_found)
         self._scan_worker.finished.connect(self._on_scan_done)
         self._scan_worker.error.connect(self._on_scan_error)
@@ -728,7 +757,7 @@ class BatchDownloadPage(QWidget):
         if hasattr(self, '_pending_urls') and self._pending_urls:
             next_url = self._pending_urls.pop(0)
             self._txt_log.append(f"  🔍 Scanning: {next_url[:60]}...")
-            self._scan_worker = ScanWorker(next_url, self._spn_limit.value(), self._get_cookie_opts())
+            self._scan_worker = ScanWorker(next_url, self._spn_limit.value(), self._get_cookie_opts(), self._cmb_douyin_mode.currentData())
             self._scan_worker.video_found.connect(self._on_video_found)
             self._scan_worker.finished.connect(self._on_txt_batch_done)
             self._scan_worker.error.connect(lambda m: self._txt_log.append(f"  ⚠ {m}"))
@@ -887,7 +916,7 @@ class BatchDownloadPage(QWidget):
                     self._pending_urls = urls[1:]  # queue remaining
                     self._btn_scan.setEnabled(False)
                     self._btn_scan.setText("⏳ Scanning...")
-                    self._scan_worker = ScanWorker(urls[0], self._spn_limit.value(), self._get_cookie_opts())
+                    self._scan_worker = ScanWorker(urls[0], self._spn_limit.value(), self._get_cookie_opts(), self._cmb_douyin_mode.currentData())
                     self._scan_worker.video_found.connect(self._on_video_found)
                     self._scan_worker.finished.connect(self._on_txt_batch_done)
                     self._scan_worker.error.connect(self._on_scan_error)
