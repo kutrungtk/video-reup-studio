@@ -642,6 +642,12 @@ class BatchDownloadPage(QWidget):
         """Return yt-dlp cookie options dict."""
         mode = self._cmb_cookie.currentData()
         if mode == "none":
+            # Auto-detect: if URL needs cookies, try firefox automatically
+            url = self._txt_url.text().strip().lower()
+            needs_cookie = any(p in url for p in ['tiktok.com', 'douyin.com', 'instagram.com', 'facebook.com', 'fb.watch'])
+            if needs_cookie:
+                # Try firefox first (most reliable on Windows)
+                return {'cookiesfrombrowser': ('firefox',)}
             return {}
         elif mode == "file":
             path = self._txt_cookie_file.text().strip()
