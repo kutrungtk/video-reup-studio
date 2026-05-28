@@ -44,11 +44,12 @@ Danh sách thư viện:
 | Thư viện | Chức năng |
 |----------|-----------|
 | PySide6 | Giao diện (GUI) |
-| yt-dlp | Download video |
+| yt-dlp | Download video (YouTube/TikTok/FB/IG) |
 | edge-tts | Text-to-Speech (free) |
 | deep-translator | Dịch ngôn ngữ |
 | Pillow | Xử lý ảnh |
 | requests | HTTP requests |
+| gmssl | SM3 hash cho Douyin signature |
 
 ### Bước 3b (Tùy chọn): Cài OmniVoice — Clone giọng nói
 
@@ -97,12 +98,47 @@ python src/main.py
 ## 📋 Hướng dẫn sử dụng
 
 ### 📥 Tải video hàng loạt
-1. Vào **📥 Batch Download**
-2. Paste URL kênh YouTube / playlist / TikTok
-3. Chọn Resolution (1080p, 720p, 4K...)
-4. Chọn folder lưu → **SCAN** → tick chọn video → **DOWNLOAD**
 
-> 💡 YouTube public không cần cookie. TikTok/Facebook/Instagram có thể cần — xem [docs/COOKIES.md](docs/COOKIES.md)
+#### YouTube (kênh / playlist / video đơn)
+1. Vào **📥 Batch Download**
+2. Paste URL kênh / playlist / video
+3. Chọn **Resolution** (1080p, 720p, 4K...)
+4. Bấm **🔍 SCAN** → tick chọn video → **🚀 DOWNLOAD**
+5. ✅ YouTube public không cần cookie
+
+#### TikTok (video / kênh)
+1. Paste URL TikTok (vd: `https://vt.tiktok.com/xxx` hoặc `https://www.tiktok.com/@user`)
+2. Chọn **Cookie: Firefox** trong dropdown 🍪 (hoặc để "Không" — app tự dùng Firefox cho TikTok)
+3. Bấm **SCAN** → **DOWNLOAD**
+4. App tự **bestvideo+bestaudio** merge → HD + có audio + không watermark
+5. Nếu video fail → bấm **🔄 Retry Failed** (TikTok challenge đôi khi flaky, retry 3 lần)
+
+#### Facebook (Reel / Watch / video kênh)
+1. Mở Firefox → đăng nhập Facebook (cần cookie cho video private/HD)
+2. Paste URL Reel: `https://www.facebook.com/reel/xxx`
+3. Chọn **Cookie: Firefox**
+4. Bấm **SCAN** → **DOWNLOAD**
+5. App tự lấy **HD 1080p** (DASH stream, ffmpeg merge audio)
+
+#### Instagram (Reel / Post / video user)
+1. Mở Firefox → đăng nhập Instagram
+2. Paste URL Reel/Post
+3. Chọn **Cookie: Firefox** (BẮT BUỘC — IG block không cookie)
+4. Bấm **SCAN** → **DOWNLOAD**
+
+#### Douyin (抖音) — video đơn / cả tác giả
+1. Mở Firefox → đăng nhập Douyin (`douyin.com`)
+   - Không cần VPN, IP Việt Nam OK
+2. Paste link Douyin (3 dạng đều được):
+   - `https://www.douyin.com/video/xxx`
+   - `https://www.douyin.com/jingxuan?modal_id=xxx`
+   - `https://v.douyin.com/xxx` (short URL)
+3. **Chọn Douyin mode trong dropdown:**
+   - **Tác giả/kênh** → quét nhiều video của tác giả theo Limit (mặc định)
+   - **Video hiện tại** → chỉ tải đúng video đó
+4. Bấm **SCAN** → **DOWNLOAD**
+
+> 💡 **Cookie giải thích:** Mỗi nền tảng đăng nhập trên Firefox 1 lần → app tự đọc cookie. Không cần copy/paste cookie thủ công. Chi tiết: [docs/COOKIES.md](docs/COOKIES.md)
 
 ### ⚡ Edit lách bản quyền (Quick Edit)
 1. Vào **⚡ Quick Edit**
@@ -203,12 +239,48 @@ Vào **Settings** (biểu tượng ⚙️ trên sidebar) để cấu hình:
 ## 🛠 Tech Stack
 
 - **GUI:** PySide6 (Qt6)
-- **Download:** yt-dlp (YouTube, TikTok, Facebook, Instagram, 1000+ sites)
-- **Encode:** FFmpeg (H.264, AAC, GPU acceleration)
+- **Download:**
+  - YouTube/Facebook/Instagram/TikTok: yt-dlp **nightly 2026.05.25+** (TikTok challenge fix)
+  - Douyin: **direct API** với XBogus + ABogus signature (yt-dlp Douyin extractor đang broken)
+- **Encode:** FFmpeg (H.264/AV1, AAC, GPU acceleration)
 - **Image:** Pillow
-- **TTS:** edge-tts
+- **TTS:** edge-tts / OmniVoice
 - **Translate:** deep-translator
+- **Signature (Douyin):** gmssl (SM3 hash)
+
+## 🚨 Troubleshooting
+
+### "WinError 2: ffmpeg not found"
+→ Chưa copy ffmpeg.exe + ffprobe.exe vào `ffmpeg_bin/`. Xem **Bước 4** ở trên.
+
+### TikTok tải về mất tiếng / có watermark
+→ Update yt-dlp lên nightly:
+```
+pip install -U https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/yt-dlp.tar.gz
+```
+
+### Douyin báo "Fresh cookies needed"
+→ Mở Firefox → vào `https://www.douyin.com` → đăng nhập → đợi load xong → quay lại app SCAN.
+→ Nếu vẫn lỗi: đóng Firefox rồi thử lại (cookie file đôi khi bị lock).
+
+### Facebook tải chỉ ra SD (480p)
+→ Cần đăng nhập Facebook trên Firefox. Cookie bắt buộc cho HD.
+
+### Instagram báo "Login required"
+→ Bắt buộc đăng nhập Instagram trên Firefox. IG block hết hardcore với non-cookie request.
+
+### App crash khi click Quick Edit
+→ Kiểm tra ffmpeg_bin/ffmpeg.exe tồn tại. Hoặc cài ffmpeg vào PATH hệ thống.
+
+### Tên file tiếng Việt/Trung bị mojibake
+→ Đã fix trong main.py (force UTF-8 encoding). Nếu vẫn lỗi → update Python lên 3.11+.
 
 ## 📝 License
 
 MIT
+
+## 🤝 Credits
+
+- **yt-dlp** team — engine download chính
+- **jiji262/douyin-downloader** — XBogus/ABogus signature cho Douyin
+- **Evil0ctal/Douyin_TikTok_Download_API** — A-Bogus pure Python algorithm
