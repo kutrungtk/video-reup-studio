@@ -19,17 +19,21 @@ from PySide6.QtCore import Qt, QRectF, QPointF
 from PySide6.QtGui import (
     QPixmap, QImage, QFont, QColor, QPainter, QPen, QBrush,
     QFontMetrics, QCursor, QPainterPath, QLinearGradient,
+    QFontDatabase,
 )
 
-FONT_LIST = [
-    "SVN-Gilroy Black",
-    "SVN-Gilroy Heavy",
-    "SVN-Gilroy Bold",
-    "SVN-Gilroy Medium",
-    "Inter",
-    "Arial",
-    "Segoe UI",
-]
+
+def _get_system_fonts():
+    """Get all fonts installed on the system, sorted alphabetically."""
+    db = QFontDatabase()
+    all_fonts = sorted(set(db.families()))
+    # Put common video-friendly fonts at top if available
+    priority = ["SVN-Gilroy Black", "SVN-Gilroy Heavy", "SVN-Gilroy Bold",
+                "Arial Black", "Impact", "Montserrat", "Bebas Neue",
+                "Oswald", "Roboto", "Inter", "Arial", "Segoe UI"]
+    top = [f for f in priority if f in all_fonts]
+    rest = [f for f in all_fonts if f not in top]
+    return top + rest
 
 
 class DraggableText(QGraphicsItem):
@@ -243,7 +247,7 @@ class ThumbnailProPage(QWidget):
         row1.addWidget(self._txt_text, 1)
 
         self._cmb_font = QComboBox()
-        self._cmb_font.addItems(FONT_LIST)
+        self._cmb_font.addItems(_get_system_fonts())
         self._cmb_font.setFixedWidth(160)
         row1.addWidget(self._cmb_font)
 
