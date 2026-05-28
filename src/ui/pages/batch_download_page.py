@@ -219,12 +219,48 @@ class DownloadWorker(QThread):
                     if has_ffmpeg:
                         opts['postprocessors'] = [{'key': 'FFmpegThumbnailsConvertor', 'format': 'jpg'}]
 
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    ydl.download([url])
+                downloaded_file = None
 
-                self.progress.emit(idx, "✅ Done", "")
-                self.log.emit(f"✅ [{idx+1}] {title[:50]}")
-                return True
+                def progress_hook(d):
+                    nonlocal downloaded_file
+                    if d['status'] == 'finished':
+                        downloaded_file = d.get('filename', d.get('info_dict', {}).get('_filename', ''))
+
+                opts['progress_hooks'] = [progress_hook]
+
+                # Fix Unicode filenames on Windows
+                import sys
+                if sys.platform == 'win32':
+                    opts['windowsfilenames'] = True
+                    # Don't restrict filenames — keep readable titles
+                    # Fix: use encoding-safe outtmpl with sanitized title
+                    opts['encoding'] = 'utf-8'
+
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    result = ydl.download([url])
+
+                # Verify file actually exists
+                if downloaded_file and os.path.isfile(downloaded_file):
+                    self.progress.emit(idx, "✅ Done", os.path.basename(downloaded_file))
+                    self.log.emit(f"✅ [{idx+1}] {title[:50]}")
+                    return True
+                elif result == 0:
+                    # yt-dlp returned 0 but no file hook — check by pattern
+                    import glob
+                    pattern = os.path.join(self.output_dir, f"{today}*edited*")
+                    matches = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
+                    if matches:
+                        self.progress.emit(idx, "✅ Done", os.path.basename(matches[0]))
+                        self.log.emit(f"✅ [{idx+1}] {title[:50]}")
+                        return True
+                    else:
+                        self.progress.emit(idx, "❌ Failed", "File not saved")
+                        self.log.emit(f"❌ [{idx+1}] {title[:50]}: Download reported OK but file not found")
+                        return False
+                else:
+                    self.progress.emit(idx, "❌ Failed", "Download failed")
+                    self.log.emit(f"❌ [{idx+1}] {title[:50]}: yt-dlp returned error code {result}")
+                    return False
 
             except Exception as e:
                 self.progress.emit(idx, "❌ Error", str(e)[:50])
