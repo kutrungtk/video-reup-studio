@@ -102,6 +102,8 @@ python src/main.py
 3. Chọn Resolution (1080p, 720p, 4K...)
 4. Chọn folder lưu → **SCAN** → tick chọn video → **DOWNLOAD**
 
+> 💡 YouTube public không cần cookie. TikTok/Facebook/Instagram có thể cần — xem [docs/COOKIES.md](docs/COOKIES.md)
+
 ### ⚡ Edit lách bản quyền (Quick Edit)
 1. Vào **⚡ Quick Edit**
 2. Chọn folder video hoặc chọn files
