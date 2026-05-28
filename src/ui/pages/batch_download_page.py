@@ -104,7 +104,7 @@ class DownloadWorker(QThread):
     log = Signal(str)
     all_done = Signal(int, int)  # (success, failed)
 
-    def __init__(self, tasks: list, output_dir: str, resolution: str, mode: str, max_workers: int, cookie_opts: dict = None):
+    def __init__(self, tasks: list, output_dir: str, resolution: str, mode: str, max_workers: int, cookie_opts: dict = None, delay: int = 0):
         super().__init__()
         self.tasks = tasks  # [{index, url, title}, ...]
         self.output_dir = output_dir
@@ -112,6 +112,7 @@ class DownloadWorker(QThread):
         self.mode = mode
         self.max_workers = max_workers
         self.cookie_opts = cookie_opts or {}
+        self.delay = delay
         self._cancelled = False
 
     def run(self):
@@ -147,6 +148,11 @@ class DownloadWorker(QThread):
                 }
                 # Add cookie options
                 opts.update(self.cookie_opts)
+
+                # Add delay for anti-block (Douyin/TikTok)
+                if self.delay > 0:
+                    opts['sleep_interval'] = self.delay
+                    opts['sleep_requests'] = max(1, self.delay - 2)
 
                 # Find ffmpeg first — determines format strategy
                 import shutil
@@ -307,6 +313,14 @@ class BatchDownloadPage(QWidget):
         self._spn_workers.setToolTip("Số luồng tải song song (5-10 recommended)")
         settings.addWidget(self._spn_workers)
 
+        settings.addWidget(QLabel("Delay:"))
+        self._spn_delay = QSpinBox()
+        self._spn_delay.setRange(0, 30)
+        self._spn_delay.setValue(0)
+        self._spn_delay.setSuffix("s")
+        self._spn_delay.setToolTip("Nghỉ giữa mỗi video (Douyin/TikTok: 3-5s để tránh block)")
+        settings.addWidget(self._spn_delay)
+
         settings.addWidget(QLabel("Limit:"))
         self._spn_limit = QSpinBox()
         self._spn_limit.setRange(1, 2000)
@@ -423,11 +437,34 @@ class BatchDownloadPage(QWidget):
             self._txt_log.append("⚠ Paste URL trước")
             return
 
+        # Auto-detect platform → suggest settings
+        url_lower = url.lower()
+        if "douyin.com" in url_lower:
+            if self._spn_delay.value() < 3:
+                self._spn_delay.setValue(5)
+                self._txt_log.append("💡 Douyin detected → Delay=5s (chống block)")
+            if self._spn_workers.value() > 3:
+                self._spn_workers.setValue(2)
+                self._txt_log.append("💡 Douyin detected → Workers=2 (an toàn)")
+            if self._cmb_cookie.currentData() == "none":
+                self._txt_log.append("⚠️ Douyin cần cookie! Chọn Firefox trong dropdown 🍪")
+        elif "tiktok.com" in url_lower:
+            if self._spn_delay.value() < 2:
+                self._spn_delay.setValue(3)
+                self._txt_log.append("💡 TikTok detected → Delay=3s")
+            if self._cmb_cookie.currentData() == "none":
+                self._txt_log.append("⚠️ TikTok cần cookie! Chọn Firefox trong dropdown 🍪")
+        elif "instagram.com" in url_lower:
+            if self._cmb_cookie.currentData() == "none":
+                self._txt_log.append("⚠️ Instagram cần cookie! Chọn Firefox trong dropdown 🍪")
+        elif "facebook.com" in url_lower or "fb.watch" in url_lower:
+            if self._cmb_cookie.currentData() == "none":
+                self._txt_log.append("💡 Facebook: cookie giúp tải HD + bypass login wall")
+
         self._videos.clear()
         self._table.setRowCount(0)
         self._btn_scan.setEnabled(False)
         self._btn_scan.setText("⏳ Scanning...")
-        self._txt_log.clear()
         self._txt_log.append(f"🔍 Scanning: {url}")
 
         self._scan_worker = ScanWorker(url, self._spn_limit.value(), self._get_cookie_opts())
@@ -521,7 +558,7 @@ class BatchDownloadPage(QWidget):
         self._progress.setValue(0)
         self._txt_log.append(f"🚀 Downloading {len(tasks)} videos ({workers} workers)...")
 
-        self._dl_worker = DownloadWorker(tasks, output_dir, resolution, mode, workers, self._get_cookie_opts())
+        self._dl_worker = DownloadWorker(tasks, output_dir, resolution, mode, workers, self._get_cookie_opts(), self._spn_delay.value())
         self._dl_worker.progress.connect(self._on_dl_progress)
         self._dl_worker.log.connect(lambda m: self._txt_log.append(m))
         self._dl_worker.all_done.connect(self._on_dl_done)
