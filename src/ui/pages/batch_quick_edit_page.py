@@ -160,6 +160,7 @@ class QuickEditWorker(QThread):
     progress = Signal(int, str)  # (row_index, status)
     log = Signal(str)
     all_done = Signal(int, int)  # (success, failed)
+    error = Signal(str)  # critical error (e.g. ffmpeg not found)
 
     def __init__(self, tasks: list, settings: dict, max_workers: int = 4):
         super().__init__()
@@ -309,27 +310,14 @@ class QuickEditWorker(QThread):
                 else:
                     audio_map = "0:a?"
 
-                if filter_complex_parts:
-                    filter_complex = ";".join(filter_complex_parts)
-                    cmd += ["-filter_complex", filter_complex, "-map", current_stream, "-map", audio_map]
-                else:
-                    cmd += ["-map", "0:v", "-map", "0:a?"]
-
                 # Video encode — platform-aware HD quality
                 # Get platform preset
                 platform = s.get('platform', 'tiktok')
-                quality = s.get('quality', 'high')
-                # Get encode params from Platform × Quality
                 from config.constants import get_encode_params
                 quality = s.get('quality', 'fullhd')
                 preset = get_encode_params(platform, quality)
 
-                # MD5 change — random metadata
-                if s.get('md5_change', False):
-                    rand_str = ''.join(random.choices(string.ascii_letters, k=16))
-                    cmd += ["-metadata", f"comment={rand_str}"]
-
-                # Scale to target resolution
+                # Scale to target resolution (BEFORE building cmd)
                 w, h = preset["w"], preset["h"]
                 if w > 0:
                     scale_filter = f"scale={w}:{h}:force_original_aspect_ratio=decrease,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2:black"
@@ -340,7 +328,7 @@ class QuickEditWorker(QThread):
                         filter_complex_parts.append(f"[0:v]{scale_filter}[scaled]")
                         current_stream = "[scaled]"
 
-                # Force FPS
+                # Force FPS (BEFORE building cmd)
                 fps = preset.get("fps", 30)
                 if fps > 0:
                     fps_filter = f"fps={fps}"
@@ -351,14 +339,25 @@ class QuickEditWorker(QThread):
                         filter_complex_parts.append(f"[0:v]{fps_filter}[fpsd]")
                         current_stream = "[fpsd]"
 
+                # NOW build filter_complex into cmd
+                if filter_complex_parts:
+                    filter_complex = ";".join(filter_complex_parts)
+                    cmd += ["-filter_complex", filter_complex, "-map", current_stream, "-map", audio_map]
+                else:
+                    cmd += ["-map", "0:v", "-map", "0:a?"]
+
+                # MD5 change — random metadata
+                if s.get('md5_change', False):
+                    rand_str = ''.join(random.choices(string.ascii_letters, k=16))
+                    cmd += ["-metadata", f"comment={rand_str}"]
+
                 # Encode — GPU auto-detect
                 from engine.modules.gpu_detect import get_encode_command
                 encode_params = get_encode_command(quality)
                 # Override maxrate/bufsize from preset
-                # Remove existing maxrate/bufsize from encode_params and add from preset
                 final_encode = []
                 skip_next = False
-                for i, p in enumerate(encode_params):
+                for j, p in enumerate(encode_params):
                     if skip_next:
                         skip_next = False
                         continue
@@ -382,7 +381,8 @@ class QuickEditWorker(QThread):
                     cmd += [output_path]
 
                 # Run main encode
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+                creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=600, creationflags=creationflags)
                 if result.returncode != 0:
                     raise RuntimeError(f"ffmpeg error: {result.stderr[-200:]}")
 
@@ -958,6 +958,7 @@ class BatchQuickEditPage(QWidget):
         self._worker.progress.connect(self._on_progress)
         self._worker.log.connect(lambda m: self._txt_log.append(m))
         self._worker.all_done.connect(self._on_done)
+        self._worker.error.connect(lambda m: (self._txt_log.append(m), self._on_done(0, 0)))
         self._worker.start()
 
     def _on_progress(self, row, status):

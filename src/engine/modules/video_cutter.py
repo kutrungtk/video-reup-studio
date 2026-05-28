@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from modules.ffmpeg_utils import run_ffmpeg, get_video_info
+from engine.modules.ffmpeg_utils import run_ffmpeg, get_video_info
 
 
 @dataclass

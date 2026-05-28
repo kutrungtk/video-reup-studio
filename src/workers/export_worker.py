@@ -143,7 +143,7 @@ class ExportWorker(QThread):
                 # Override maxrate/bufsize from config
                 final_encode = []
                 skip_next = False
-                for i, p in enumerate(encode_params):
+                for j, p in enumerate(encode_params):
                     if skip_next:
                         skip_next = False
                         continue

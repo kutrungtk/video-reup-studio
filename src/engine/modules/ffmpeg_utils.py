@@ -111,13 +111,15 @@ def find_ffprobe() -> str:
 
 
 def run_ffmpeg(args: list[str], capture_output: bool = True) -> subprocess.CompletedProcess:
-    """Run ffmpeg command with error handling."""
+    """Run ffmpeg with given args."""
     cmd = [find_ffmpeg()] + args
+    creationflags = subprocess.CREATE_NO_WINDOW if os.name == 'nt' else 0
     result = subprocess.run(
         cmd,
         capture_output=capture_output,
         text=True,
         timeout=3600,  # 1 hour max
+        creationflags=creationflags,
     )
     if result.returncode != 0:
         raise RuntimeError(f"FFmpeg error: {result.stderr[:500]}")

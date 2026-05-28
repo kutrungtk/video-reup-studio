@@ -13,7 +13,7 @@ import tempfile
 from typing import Optional
 from dataclasses import dataclass
 
-from modules.ffmpeg_utils import run_ffprobe
+from engine.modules.ffmpeg_utils import run_ffprobe
 
 
 # Edge-TTS voices per language

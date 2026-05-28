@@ -443,6 +443,22 @@ class BatchDownloadPage(QWidget):
         self._btn_scan.setText("🔍 SCAN")
         self._txt_log.append(f"✅ Found {count} videos")
 
+    def _on_txt_batch_done(self, count):
+        """After scanning one URL from txt, scan next if available."""
+        self._txt_log.append(f"  ✅ +{count} videos")
+        if hasattr(self, '_pending_urls') and self._pending_urls:
+            next_url = self._pending_urls.pop(0)
+            self._txt_log.append(f"  🔍 Scanning: {next_url[:60]}...")
+            self._scan_worker = ScanWorker(next_url, self._spn_limit.value())
+            self._scan_worker.video_found.connect(self._on_video_found)
+            self._scan_worker.finished.connect(self._on_txt_batch_done)
+            self._scan_worker.error.connect(lambda m: self._txt_log.append(f"  ⚠ {m}"))
+            self._scan_worker.start()
+        else:
+            self._btn_scan.setEnabled(True)
+            self._btn_scan.setText("🔍 SCAN")
+            self._txt_log.append(f"✅ Done — Total {len(self._videos)} videos")
+
     def _on_scan_error(self, msg):
         self._btn_scan.setEnabled(True)
         self._btn_scan.setText("🔍 SCAN")
@@ -531,14 +547,15 @@ class BatchDownloadPage(QWidget):
                 if urls:
                     self._txt_url.setText(f"{len(urls)} URLs from {os.path.basename(path)}")
                     self._txt_log.append(f"📂 Loaded {len(urls)} URLs from {path}")
-                    # Auto-scan all URLs
+                    # Auto-scan all URLs — scan first URL, queue rest
                     self._videos.clear()
                     self._table.setRowCount(0)
+                    self._pending_urls = urls[1:]  # queue remaining
                     self._btn_scan.setEnabled(False)
                     self._btn_scan.setText("⏳ Scanning...")
-                    self._scan_worker = ScanWorker(path, self._spn_limit.value())
+                    self._scan_worker = ScanWorker(urls[0], self._spn_limit.value())
                     self._scan_worker.video_found.connect(self._on_video_found)
-                    self._scan_worker.finished.connect(self._on_scan_done)
+                    self._scan_worker.finished.connect(self._on_txt_batch_done)
                     self._scan_worker.error.connect(self._on_scan_error)
                     self._scan_worker.start()
                 else:

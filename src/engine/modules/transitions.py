@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
-from modules.ffmpeg_utils import run_ffmpeg
+from engine.modules.ffmpeg_utils import run_ffmpeg
 
 
 @dataclass
@@ -94,7 +94,7 @@ def apply_fade_black(
     ])
 
     # Concat
-    from modules.ffmpeg_utils import concat_videos
+    from engine.modules.ffmpeg_utils import concat_videos
     concat_videos([temp_a, temp_b], output_path)
 
     # Cleanup
@@ -137,7 +137,7 @@ def concat_with_transitions(
 
     if config.transition_type == "none":
         # No transitions, just concat
-        from modules.ffmpeg_utils import concat_videos
+        from engine.modules.ffmpeg_utils import concat_videos
         return concat_videos(video_paths, output_path)
 
     # For crossfade: use xfade filter chain
@@ -147,7 +147,7 @@ def concat_with_transitions(
         return _concat_fade(video_paths, output_path, config)
     else:
         # Fallback to simple concat
-        from modules.ffmpeg_utils import concat_videos
+        from engine.modules.ffmpeg_utils import concat_videos
         return concat_videos(video_paths, output_path)
 
 
@@ -162,7 +162,7 @@ def _concat_xfade(
     Concatenate with xfade transitions using complex filter graph.
     Handles N segments by chaining xfade filters.
     """
-    from modules.ffmpeg_utils import run_ffprobe
+    from engine.modules.ffmpeg_utils import run_ffprobe
 
     n = len(video_paths)
 
@@ -295,7 +295,7 @@ def _concat_fade(
     Concatenate with fade-to-black (or white) between segments.
     Each segment gets fade out at end + fade in at start.
     """
-    from modules.ffmpeg_utils import run_ffprobe
+    from engine.modules.ffmpeg_utils import run_ffprobe
 
     color = "black" if config.transition_type == "fade_black" else "white"
     dur = config.duration
@@ -335,7 +335,7 @@ def _concat_fade(
         processed.append(temp_out)
 
     # Concat all processed segments
-    from modules.ffmpeg_utils import concat_videos
+    from engine.modules.ffmpeg_utils import concat_videos
     concat_videos(processed, output_path)
 
     # Cleanup
@@ -350,6 +350,6 @@ if __name__ == "__main__":
     import sys
     print("Transitions module — use via composer or import directly.")
     print("Example:")
-    print("  from modules.transitions import concat_with_transitions, TransitionConfig")
+    print("  from engine.modules.transitions import concat_with_transitions, TransitionConfig")
     print("  config = TransitionConfig(transition_type='crossfade', duration=0.5)")
     print("  concat_with_transitions(['seg1.mp4', 'seg2.mp4', 'seg3.mp4'], 'output.mp4', config)")

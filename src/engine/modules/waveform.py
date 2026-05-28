@@ -10,7 +10,7 @@ import struct
 import subprocess
 from typing import Optional
 
-from modules.ffmpeg_utils import find_ffmpeg
+from engine.modules.ffmpeg_utils import find_ffmpeg
 
 
 def generate_waveform(

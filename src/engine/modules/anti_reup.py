@@ -10,7 +10,7 @@ import random
 from typing import Optional
 from dataclasses import dataclass, field
 
-from modules.ffmpeg_utils import run_ffmpeg, strip_metadata
+from engine.modules.ffmpeg_utils import run_ffmpeg, strip_metadata
 
 
 @dataclass

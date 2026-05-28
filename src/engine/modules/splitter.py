@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from modules.ffmpeg_utils import cut_video, detect_silence, get_video_info
+from engine.modules.ffmpeg_utils import cut_video, detect_silence, get_video_info
 
 
 def smart_split(
@@ -230,7 +230,7 @@ def _validate_cut_points(cut_points: list[float], total_duration: float, min_dur
 
 def _cut_with_fade(video_path: str, output_path: str, start: float, end: float, fade_duration: float):
     """Cut video with fade in/out effects."""
-    from modules.ffmpeg_utils import run_ffmpeg
+    from engine.modules.ffmpeg_utils import run_ffmpeg
 
     duration = end - start
     fade_out_start = duration - fade_duration

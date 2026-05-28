@@ -11,7 +11,7 @@ from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Optional
 
-from modules.ffmpeg_utils import extract_audio, get_video_info
+from engine.modules.ffmpeg_utils import extract_audio, get_video_info
 
 
 @dataclass

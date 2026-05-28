@@ -304,24 +304,24 @@ class SettingsPage(QWidget):
         for p in ANTI_REUP_PRESETS:
             self._cmb_antireup.addItem(p.capitalize(), p)
         self._cmb_antireup.setCurrentIndex(1)
-        g1_layout.addWidget(self._cmb_antireup, 2, 1)
+        g1_layout.addWidget(self._cmb_antireup, 3, 1)
 
-        g1_layout.addWidget(QLabel("Mismatch Strategy:"), 3, 0)
+        g1_layout.addWidget(QLabel("Mismatch Strategy:"), 4, 0)
         self._cmb_mismatch = QComboBox()
         self._cmb_mismatch.addItems(["freeze_last", "slow_video", "trim_voice"])
-        g1_layout.addWidget(self._cmb_mismatch, 3, 1)
+        g1_layout.addWidget(self._cmb_mismatch, 4, 1)
 
-        g1_layout.addWidget(QLabel("Transition:"), 4, 0)
+        g1_layout.addWidget(QLabel("Transition:"), 5, 0)
         self._cmb_transition = QComboBox()
         self._cmb_transition.addItems(["none", "crossfade", "fade_black", "fade_white"])
-        g1_layout.addWidget(self._cmb_transition, 4, 1)
+        g1_layout.addWidget(self._cmb_transition, 5, 1)
 
-        g1_layout.addWidget(QLabel("Segment Crop %:"), 5, 0)
+        g1_layout.addWidget(QLabel("Segment Crop %:"), 6, 0)
         self._spn_crop = QDoubleSpinBox()
         self._spn_crop.setRange(0.0, 10.0)
         self._spn_crop.setSingleStep(0.5)
         self._spn_crop.setValue(3.0)
-        g1_layout.addWidget(self._spn_crop, 5, 1)
+        g1_layout.addWidget(self._spn_crop, 6, 1)
 
         layout.addWidget(group1)
 

@@ -9,8 +9,8 @@ import json
 from dataclasses import dataclass
 from typing import Optional
 
-from modules.ffmpeg_utils import run_ffmpeg, get_video_info, concat_videos
-from modules.video_cutter import Segment
+from engine.modules.ffmpeg_utils import run_ffmpeg, get_video_info, concat_videos
+from engine.modules.video_cutter import Segment
 
 
 @dataclass
@@ -44,7 +44,7 @@ class ComposeConfig:
 
 def get_audio_duration(audio_path: str) -> float:
     """Get duration of audio file in seconds."""
-    from modules.ffmpeg_utils import run_ffprobe
+    from engine.modules.ffmpeg_utils import run_ffprobe
     data = run_ffprobe(["-show_format", audio_path])
     return float(data.get("format", {}).get("duration", 0))
 
@@ -288,7 +288,7 @@ def compose_all_segments(
 
     if config.transition_type != "none" and len(composed_paths) > 1:
         # Use transitions module
-        from modules.transitions import concat_with_transitions, TransitionConfig
+        from engine.modules.transitions import concat_with_transitions, TransitionConfig
         trans_config = TransitionConfig(
             transition_type=config.transition_type,
             duration=config.transition_duration,
@@ -302,7 +302,7 @@ def compose_all_segments(
     # Burn subtitle if provided
     if subtitle_path and os.path.isfile(subtitle_path):
         print(f"[Composer] Burning subtitle: {subtitle_path}")
-        from modules.ffmpeg_utils import burn_subtitle
+        from engine.modules.ffmpeg_utils import burn_subtitle
         burn_subtitle(concat_output, subtitle_path, final_output)
         # Clean intermediate
         if concat_output != final_output:
@@ -355,8 +355,8 @@ if __name__ == "__main__":
 
     print("Composer module - use via pipeline or import directly.")
     print("Example:")
-    print("  from modules.composer import compose_all_segments")
-    print("  from modules.video_cutter import cut_from_srt, Segment")
+    print("  from engine.modules.composer import compose_all_segments")
+    print("  from engine.modules.video_cutter import cut_from_srt, Segment")
     print("")
     print("  segments = cut_from_srt('video.mp4', 'sub.srt', 'segments/')")
     print("  # ... assign voice_path to each segment ...")
