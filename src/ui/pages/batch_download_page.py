@@ -298,18 +298,39 @@ class DownloadWorker(QThread):
                         if not os.path.isfile(video_tmp) and attempt < 2:
                             time.sleep(3)
 
-                    # Pass 2: audio (retry up to 3 times)
-                    for attempt in range(3):
-                        if os.path.isfile(audio_tmp):
-                            break
-                        opts_a = {**tiktok_opts, 'outtmpl': audio_tmp, 'format': 'download'}
-                        with yt_dlp.YoutubeDL(opts_a) as ydl:
-                            ydl.download([url])
-                        if not os.path.isfile(audio_tmp) and attempt < 2:
-                            time.sleep(3)
+                    # Check if video already has audio (some TikTok CDN responses include it)
+                    video_has_audio = False
+                    if os.path.isfile(video_tmp):
+                        try:
+                            ffprobe_path = os.path.join(ffmpeg_location, 'ffprobe.exe' if sys.platform == 'win32' else 'ffprobe')
+                            r_probe = subprocess.run(
+                                [ffprobe_path, '-v', 'error', '-select_streams', 'a',
+                                 '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', video_tmp],
+                                capture_output=True, creationflags=0x08000000 if sys.platform == 'win32' else 0)
+                            video_has_audio = 'audio' in r_probe.stdout.decode()
+                        except Exception:
+                            pass
 
-                    # Merge with ffmpeg
-                    if os.path.isfile(video_tmp) and os.path.isfile(audio_tmp):
+                    # Pass 2: audio only if video doesn't have it
+                    if not video_has_audio:
+                        for attempt in range(3):
+                            if os.path.isfile(audio_tmp):
+                                break
+                            opts_a = {**tiktok_opts, 'outtmpl': audio_tmp, 'format': 'download'}
+                            with yt_dlp.YoutubeDL(opts_a) as ydl:
+                                ydl.download([url])
+                            if not os.path.isfile(audio_tmp) and attempt < 2:
+                                time.sleep(3)
+
+                    # Final output
+                    if os.path.isfile(video_tmp) and video_has_audio:
+                        # Video already has audio — just rename
+                        os.rename(video_tmp, final_file)
+                        self.progress.emit(idx, "✅ Done", os.path.basename(final_file))
+                        self.log.emit(f"✅ [{idx+1}] {title[:50]}")
+                        return True
+                    elif os.path.isfile(video_tmp) and os.path.isfile(audio_tmp):
+                        # Merge video + audio with ffmpeg
                         cmd = [os.path.join(ffmpeg_location, 'ffmpeg.exe' if sys.platform == 'win32' else 'ffmpeg'),
                                '-y', '-i', video_tmp, '-i', audio_tmp,
                                '-c:v', 'copy', '-c:a', 'aac', '-map', '0:v:0', '-map', '1:a:0',
