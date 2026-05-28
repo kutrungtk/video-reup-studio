@@ -145,15 +145,26 @@ class DownloadWorker(QThread):
             try:
                 from datetime import date
                 today = date.today().strftime('%Y-%m-%d')
+                
+                # Detect platform for specific handling
+                is_tiktok = any(p in url.lower() for p in ['tiktok.com', 'douyin.com'])
+                
                 opts = {
                     'outtmpl': os.path.join(self.output_dir, f'{today}_%(title)s_edited.%(ext)s'),
-                    'quiet': True,
-                    'no_warnings': True,
-                    'ignoreerrors': True,
                     'retries': 3,
                     'fragment_retries': 3,
                     'extractor_retries': 3,
                 }
+                
+                if is_tiktok:
+                    # TikTok needs quiet=False to work (impersonation/challenge solving)
+                    opts['quiet'] = False
+                    opts['no_warnings'] = False
+                    opts['ignoreerrors'] = False
+                else:
+                    opts['quiet'] = True
+                    opts['no_warnings'] = True
+                    opts['ignoreerrors'] = True
                 # Add cookie options
                 opts.update(self.cookie_opts)
 
@@ -188,12 +199,12 @@ class DownloadWorker(QThread):
                 # Không ffmpeg → chỉ lấy single-file (best có sẵn)
                 # TikTok/Douyin: luôn dùng best (file gộp sẵn, tránh mất tiếng)
                 has_ffmpeg = ffmpeg_location is not None
-                is_tiktok = any(p in url.lower() for p in ['tiktok.com', 'douyin.com'])
 
                 if self.mode == "Video MP4":
                     if is_tiktok:
-                        # TikTok: file gộp sẵn video+audio, không cần merge
-                        opts['format'] = f'best[height<={res}][ext=mp4]/best[height<={res}]/best'
+                        # TikTok: use 'download' format (direct CDN link with video+audio)
+                        # Other formats may be video-only despite reporting acodec=aac
+                        opts['format'] = 'download/best[height<=1080][ext=mp4]/best'
                     elif has_ffmpeg:
                         # Ưu tiên: video+audio riêng (chất lượng cao nhất) → merge
                         opts['format'] = (
@@ -208,7 +219,7 @@ class DownloadWorker(QThread):
 
                 elif self.mode == "Video + Thumbnail":
                     if is_tiktok:
-                        opts['format'] = f'best[height<={res}][ext=mp4]/best[height<={res}]/best'
+                        opts['format'] = 'download/best[height<=1080][ext=mp4]/best'
                     elif has_ffmpeg:
                         opts['format'] = (
                             f'bestvideo[height<={res}]+bestaudio/'
