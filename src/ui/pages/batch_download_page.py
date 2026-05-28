@@ -48,25 +48,17 @@ class ScanWorker(QThread):
             if "youtube.com/@" in url and "/videos" not in url and "/shorts" not in url:
                 url = url.rstrip("/") + "/videos"
 
-            # Douyin: yt-dlp extractor is broken; use direct API scan
+            # Douyin: yt-dlp extractor is broken; use direct API scan.
+            # A pasted video/modal link scans that video's author posts up to limit.
             if "douyin.com" in url.lower():
-                from downloaders.douyin import extract_aweme_id, load_firefox_cookies, fetch_video_detail
-                aweme_id = extract_aweme_id(url)
-                if not aweme_id:
-                    self.error.emit("Douyin: không lấy được aweme_id")
+                from downloaders.douyin import scan_author_from_video
+                videos = scan_author_from_video(url, limit=self.limit)
+                if not videos:
+                    self.error.emit("Douyin: không quét được video/tác giả")
                     return
-                cookies = load_firefox_cookies()
-                detail = fetch_video_detail(aweme_id, cookies)
-                if not detail:
-                    self.error.emit("Douyin: không lấy được aweme_detail (mở douyin.com trong Firefox rồi thử lại)")
-                    return
-                self.video_found.emit({
-                    'title': detail.get('desc') or aweme_id,
-                    'url': f"https://www.douyin.com/video/{aweme_id}",
-                    'duration': int((detail.get('duration') or 0) / 1000),
-                    'views': 0,
-                })
-                self.finished.emit(1)
+                for v in videos:
+                    self.video_found.emit(v)
+                self.finished.emit(len(videos))
                 return
 
             self.progress.emit(f"Scanning: {url}")

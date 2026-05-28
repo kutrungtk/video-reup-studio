@@ -28,6 +28,7 @@ UA_POOL = [
 
 BASE_URL = "https://www.douyin.com"
 DETAIL_PATH = "/aweme/v1/web/aweme/detail/"
+USER_POST_PATH = "/aweme/v1/web/aweme/post/"
 
 
 def download_douyin(url: str, output_dir: str, ffmpeg_location: str | None,
@@ -159,19 +160,87 @@ def fetch_video_detail(aweme_id: str, cookies: Dict[str, str]) -> Optional[Dict[
     ua = random.choice(UA_POOL)
     params = default_query(cookies)
     params.update({'aweme_id': aweme_id})
-    url = sign_url(f'{BASE_URL}{DETAIL_PATH}', params, ua)
+    data = request_json(DETAIL_PATH, params, cookies, ua, referer=f'{BASE_URL}/video/{aweme_id}')
+    return data.get('aweme_detail') if isinstance(data, dict) else None
+
+
+def request_json(path: str, params: Dict[str, Any], cookies: Dict[str, str], ua: str,
+                 referer: str = BASE_URL) -> Dict[str, Any]:
+    url = sign_url(f'{BASE_URL}{path}', params, ua)
     headers = {
         'User-Agent': ua,
-        'Referer': f'{BASE_URL}/video/{aweme_id}',
+        'Referer': referer,
         'Accept': '*/*',
         'Accept-Encoding': 'gzip, deflate, br',
         'Accept-Language': 'zh-CN,zh;q=0.9,en-US;q=0.8,en;q=0.7',
     }
     r = requests.get(url, headers=headers, cookies=cookies, timeout=30)
     if r.status_code != 200 or not r.content:
-        return None
+        return {}
     data = r.json()
-    return data.get('aweme_detail') if isinstance(data, dict) else None
+    return data if isinstance(data, dict) else {}
+
+
+def fetch_user_posts(sec_uid: str, cookies: Dict[str, str], limit: int = 50) -> list[Dict[str, Any]]:
+    """Fetch Douyin user post list by sec_uid."""
+    items: list[Dict[str, Any]] = []
+    max_cursor = 0
+    has_more = True
+    while has_more and len(items) < limit:
+        ua = random.choice(UA_POOL)
+        params = default_query(cookies)
+        params.update({
+            'sec_user_id': sec_uid,
+            'max_cursor': max_cursor,
+            'count': min(18, max(1, limit - len(items))),
+            'show_live_replay_strategy': '1',
+            'need_time_list': '1',
+            'time_list_query': '0',
+            'whale_cut_token': '',
+            'cut_version': '1',
+            'publish_video_strategy_type': '2',
+        })
+        data = request_json(USER_POST_PATH, params, cookies, ua, referer=f'{BASE_URL}/user/{sec_uid}')
+        aweme_list = data.get('aweme_list') or []
+        if not aweme_list:
+            break
+        items.extend([x for x in aweme_list if isinstance(x, dict)])
+        has_more = bool(data.get('has_more'))
+        max_cursor = data.get('max_cursor') or data.get('cursor') or 0
+        if has_more:
+            time.sleep(1)
+    return items[:limit]
+
+
+def scan_author_from_video(url: str, limit: int = 50) -> list[Dict[str, Any]]:
+    """Given a Douyin video/modal URL, return author's recent posts as UI-ready dicts."""
+    aweme_id = extract_aweme_id(url)
+    if not aweme_id:
+        raise ValueError('Không lấy được aweme_id từ link Douyin')
+    cookies = load_firefox_cookies()
+    detail = fetch_video_detail(aweme_id, cookies)
+    if not detail:
+        raise RuntimeError('Không lấy được aweme_detail')
+    author = detail.get('author') or {}
+    sec_uid = author.get('sec_uid') or author.get('sec_user_id')
+    if not sec_uid:
+        raise RuntimeError('Không lấy được sec_uid tác giả')
+    posts = fetch_user_posts(sec_uid, cookies, limit=limit)
+    if not posts:
+        # fallback: current video only
+        posts = [detail]
+    out = []
+    for item in posts:
+        aid = str(item.get('aweme_id') or item.get('group_id') or '')
+        if not aid:
+            continue
+        out.append({
+            'title': item.get('desc') or aid,
+            'url': f'https://www.douyin.com/video/{aid}',
+            'duration': int((item.get('duration') or 0) / 1000),
+            'views': (item.get('statistics') or {}).get('play_count', 0),
+        })
+    return out
 
 
 def pick_best_video_url(aweme: Dict[str, Any]) -> Optional[str]:
