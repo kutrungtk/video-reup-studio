@@ -206,9 +206,8 @@ class DownloadWorker(QThread):
 
                 if self.mode == "Video MP4":
                     if is_tiktok:
-                        # TikTok: only 'download' format has real audio
-                        # Other formats (bytevc1_*, h264_*) are video-only despite reporting acodec=aac
-                        opts['format'] = 'download/best'
+                        # TikTok 2-pass: video HD (no watermark) + audio from 'download' format + merge
+                        opts['format'] = 'bytevc1_1080p_1281826-0/bytevc1_720p_688444-0/h264_720p_929531-0/best'
                         opts['extractor_args'] = {'tiktok': ['api_hostname=api22-normal-c-alisg.tiktokv.com']}
                     elif has_ffmpeg:
                         # Ưu tiên: video+audio riêng (chất lượng cao nhất) → merge
@@ -224,7 +223,7 @@ class DownloadWorker(QThread):
 
                 elif self.mode == "Video + Thumbnail":
                     if is_tiktok:
-                        opts['format'] = 'download/best'
+                        opts['format'] = 'bytevc1_1080p_1281826-0/bytevc1_720p_688444-0/h264_720p_929531-0/best'
                         opts['extractor_args'] = {'tiktok': ['api_hostname=api22-normal-c-alisg.tiktokv.com']}
                     elif has_ffmpeg:
                         opts['format'] = (
@@ -266,8 +265,57 @@ class DownloadWorker(QThread):
                     opts['windowsfilenames'] = True
                     opts['encoding'] = 'utf-8'
 
-                with yt_dlp.YoutubeDL(opts) as ydl:
-                    result = ydl.download([url])
+                if is_tiktok and has_ffmpeg:
+                    # TikTok 2-pass: video HD (no watermark) + audio from 'download' + merge
+                    import subprocess
+                    video_tmp = os.path.join(self.output_dir, f'_tmp_video_{idx}.mp4')
+                    audio_tmp = os.path.join(self.output_dir, f'_tmp_audio_{idx}.mp4')
+                    final_file = os.path.join(self.output_dir, f'{today}_{title[:80]}.mp4')
+
+                    # Pass 1: video HD
+                    opts_v = {**opts, 'outtmpl': video_tmp, 'format': 'bytevc1_1080p_1281826-0/bytevc1_720p_688444-0/h264_720p_929531-0/best'}
+                    with yt_dlp.YoutubeDL(opts_v) as ydl:
+                        ydl.download([url])
+
+                    # Pass 2: audio (from watermarked 'download' format)
+                    opts_a = {**opts, 'outtmpl': audio_tmp, 'format': 'download'}
+                    with yt_dlp.YoutubeDL(opts_a) as ydl:
+                        ydl.download([url])
+
+                    # Merge with ffmpeg
+                    if os.path.isfile(video_tmp) and os.path.isfile(audio_tmp):
+                        cmd = [os.path.join(ffmpeg_location, 'ffmpeg.exe' if sys.platform == 'win32' else 'ffmpeg'),
+                               '-y', '-i', video_tmp, '-i', audio_tmp,
+                               '-c:v', 'copy', '-c:a', 'aac', '-map', '0:v:0', '-map', '1:a:0',
+                               '-shortest', final_file]
+                        creationflags = 0x08000000 if sys.platform == 'win32' else 0
+                        r = subprocess.run(cmd, capture_output=True, creationflags=creationflags)
+                        # Cleanup temp
+                        if os.path.isfile(video_tmp): os.remove(video_tmp)
+                        if os.path.isfile(audio_tmp): os.remove(audio_tmp)
+
+                        if r.returncode == 0 and os.path.isfile(final_file):
+                            self.progress.emit(idx, "✅ Done", os.path.basename(final_file))
+                            self.log.emit(f"✅ [{idx+1}] {title[:50]}")
+                            return True
+                        else:
+                            self.progress.emit(idx, "❌ Failed", "FFmpeg merge failed")
+                            self.log.emit(f"❌ [{idx+1}] {title[:50]}: FFmpeg merge error")
+                            return False
+                    elif os.path.isfile(video_tmp):
+                        # Audio failed — use video only
+                        os.rename(video_tmp, final_file)
+                        self.progress.emit(idx, "⚠️ Done (no audio)", os.path.basename(final_file))
+                        self.log.emit(f"⚠️ [{idx+1}] {title[:50]}: Video OK but no audio")
+                        return True
+                    else:
+                        self.progress.emit(idx, "❌ Failed", "Download failed")
+                        self.log.emit(f"❌ [{idx+1}] {title[:50]}: TikTok download failed")
+                        return False
+                else:
+                    # Standard download (YouTube, FB, IG, etc.)
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        result = ydl.download([url])
 
                 # Verify file actually exists
                 if downloaded_file and os.path.isfile(downloaded_file):
@@ -277,7 +325,7 @@ class DownloadWorker(QThread):
                 elif result == 0:
                     # yt-dlp returned 0 but no file hook — check by pattern
                     import glob
-                    pattern = os.path.join(self.output_dir, f"{today}*edited*")
+                    pattern = os.path.join(self.output_dir, f"{today}*")
                     matches = sorted(glob.glob(pattern), key=os.path.getmtime, reverse=True)
                     if matches:
                         self.progress.emit(idx, "✅ Done", os.path.basename(matches[0]))
